@@ -2,51 +2,36 @@ package utils
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
 	"reflect"
+	"strconv"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-jwt/jwt/v5"
-)
-
-var (
-	ErrEmptyBody  = errors.New("empty request body")
-	ErrValidation = errors.New("validation error")
+	"github.com/pkg/errors"
 )
 
 type OkResponse struct {
 	Message string `json:"message"`
 }
 
-// Reads json body to v. Body is ReadCloser
-func UnmarshalBody(body io.ReadCloser, v any) (err error) {
-	err = json.NewDecoder(body).Decode(v)
-
-	return
-}
-
-// Writes json body to w, sends status code
+// MarshalBody Writes json body to w, sends status code
 func MarshalBody(w http.ResponseWriter, status int, v any) (err error) {
-	w.Header().Set("Content-Type", "application/json; charset=utf8")
-	w.WriteHeader(status)
+	(w).Header().Set("Content-Type", "application/json; charset=utf8")
+	(w).WriteHeader(status)
 	err = json.NewEncoder(w).Encode(v)
 
 	return
 }
 
-// Use this function if you have UnmarshalJSON method in your struct
-func UnmarshalBodyBytes(body []byte, v any) (err error) {
-	if string(body) == "[]" {
-		// If the JSON string is an empty array, set the target to an empty slice
-		reflect.ValueOf(v).Elem().Set(reflect.MakeSlice(reflect.TypeOf(v).Elem(), 0, 0))
-		return nil
-	}
-
-	err = json.Unmarshal(body, v)
+// UnmarshalBody Reads json body to v. Body is ReadCloser
+func UnmarshalBody(body io.ReadCloser, v any) (err error) {
+	err = json.NewDecoder(body).Decode(v)
 
 	return
 }
@@ -63,9 +48,10 @@ func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, 
 	}
 
 	if err != nil {
-		if _, ok := err.(*validator.InvalidValidationError); ok {
+		var invalidValidationError *validator.InvalidValidationError
+		if errors.As(err, &invalidValidationError) {
 			// if you see this error that means that it's time to correct validate_json implementation (or you fucked up json)
-			SendBadRequestError(w, "Invalid json while validation body")
+			HandleError(w, err)
 			return true
 		}
 		validationErrors := make(map[string]string)
@@ -73,7 +59,7 @@ func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, 
 			validationErrors[e.Field()] = e.Tag()
 		}
 
-		SendValidationError(w, validationErrors)
+		HandleError(w, NewValidationError(validationErrors))
 
 		return true
 	}
@@ -83,7 +69,7 @@ func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, 
 
 var secret = os.Getenv("JWT_SECRET")
 
-func CreateJWTAuth(username *string, email *string) (string, error) {
+func CreateJWTAuth(username, email *string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"username": *username,
 		"email":    *email,
@@ -98,7 +84,21 @@ func CreateJWTAuth(username *string, email *string) (string, error) {
 	return tokenStr, nil
 }
 
-func CreateJWTRefresh(refresh types.JWTRefreshToken) (string, error) {
+func HashPassword(password *string) (string, error) {
+	saltRounds, err := strconv.Atoi(os.Getenv("SALT_ROUNDS"))
+	if err != nil {
+		return "", errors.New("SALT_ROUNDS env var not set")
+	}
+	bytes, err := bcrypt.GenerateFromPassword([]byte(*password), saltRounds)
+	return string(bytes), err
+}
+
+func CheckPasswordHash(password, hash *string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(*hash), []byte(*password))
+	return err == nil
+}
+
+func CreateJWTRefresh(refresh types.RefreshToken) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{})
 
 	tokenStr, err := token.SignedString(secret)

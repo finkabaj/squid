@@ -13,15 +13,12 @@ import (
 
 var pool *pgxpool.Pool
 
-func simpleDelete(id *string, tableName string, fieldName string) error {
+func simpleDelete(ctx context.Context, id *string, tableName string, fieldName string) error {
 	if id == nil {
 		return errors.New("All arguments must be not nil")
 	}
 
 	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "%s" = $1`, tableName, fieldName)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
-	defer cancel()
 
 	row, err := pool.Query(ctx, query, *id)
 	if err != nil {
@@ -88,7 +85,7 @@ func setup() (err error) {
         );
         CREATE INDEX IF NOT EXISTS idx_users_email ON "users"("email");
     
-		DROP TRIGGER IF EXISTS set_created_at_column on "public"."users";
+		DROP TRIGGER IF EXISTS set_users_created_at on "public"."users";
 		CREATE TRIGGER set_users_created_at
             BEFORE INSERT ON "users"
             FOR EACH ROW
@@ -152,7 +149,7 @@ func Status() (err error) {
 	return
 }
 
-func CreateUser(id *string, passwordHash *string, user *types.RegisterUser) (types.User, error) {
+func CreateUser(ctx context.Context, id *string, passwordHash *string, user *types.RegisterUser) (types.User, error) {
 	if id == nil || passwordHash == nil || user == nil {
 		return types.User{}, errors.New("All arguments must be not nil")
 	}
@@ -162,9 +159,6 @@ func CreateUser(id *string, passwordHash *string, user *types.RegisterUser) (typ
         VALUES ($1, $2, $3, $4, $5, $6, $7) 
         RETURNING *
     `
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
-	defer cancel()
 
 	row, err := pool.Query(ctx, query, *id, user.Username, user.FirstName, user.LastName, user.DateOfBirth, user.Email, passwordHash)
 	if err != nil {
@@ -181,13 +175,10 @@ func CreateUser(id *string, passwordHash *string, user *types.RegisterUser) (typ
 	return newUser, nil
 }
 
-func GetUser(id *string, email *string) (types.User, error) {
+func GetUser(ctx context.Context, id *string, email *string) (types.User, error) {
 	if id == nil && email == nil {
 		return types.User{}, errors.New("At least one arguments must not be nil")
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
-	defer cancel()
 
 	var row pgx.Rows
 	var err error
@@ -207,8 +198,8 @@ func GetUser(id *string, email *string) (types.User, error) {
 
 	user, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
 
-	if err == pgx.ErrNoRows {
-		return types.User{}, errors.New("user not found")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.User{}, err
 	} else if err != nil {
 		return types.User{}, errors.Wrap(err, "error on collecting row")
 	}
@@ -216,11 +207,11 @@ func GetUser(id *string, email *string) (types.User, error) {
 	return user, nil
 }
 
-func DeleteUser(id *string) error {
-	return simpleDelete(id, "users", "id")
+func DeleteUser(ctx context.Context, id *string) error {
+	return simpleDelete(ctx, id, "users", "id")
 }
 
-func CreateRefreshToken(id *string, userID *string, tokenHash *string, expiresAt *time.Time) (types.RefreshToken, error) {
+func CreateRefreshToken(ctx context.Context, id *string, userID *string, tokenHash *string, expiresAt *time.Time) (types.RefreshToken, error) {
 	if id == nil || userID == nil || tokenHash == nil || expiresAt == nil {
 		return types.RefreshToken{}, errors.New("All arguments must be not nil")
 	}
@@ -230,9 +221,6 @@ func CreateRefreshToken(id *string, userID *string, tokenHash *string, expiresAt
         VALUES ($1, $2, $3, $4) 
         RETURNING *
     `
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
-	defer cancel()
 
 	row, err := pool.Query(ctx, query, *id, *userID, *tokenHash, *expiresAt)
 	if err != nil {
@@ -249,19 +237,16 @@ func CreateRefreshToken(id *string, userID *string, tokenHash *string, expiresAt
 	return refreshToken, nil
 }
 
-func DeleteRefreshToken(id *string) error {
-	return simpleDelete(id, "refreshTokens", "id")
+func DeleteRefreshToken(ctx context.Context, id *string) error {
+	return simpleDelete(ctx, id, "refreshTokens", "id")
 }
 
-func GetRefreshToken(id *string) (types.RefreshToken, error) {
+func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error) {
 	if id == nil {
 		return types.RefreshToken{}, errors.New("All arguments must be not nil")
 	}
 
 	query := `SELECT * FROM "refreshTokens" WHERE "id" = $1`
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*1)
-	defer cancel()
 
 	row, err := pool.Query(ctx, query, *id)
 	if err != nil {
@@ -271,8 +256,8 @@ func GetRefreshToken(id *string) (types.RefreshToken, error) {
 
 	refreshToken, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.RefreshToken])
 
-	if err == pgx.ErrNoRows {
-		return types.RefreshToken{}, errors.New("refresh token not found")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.RefreshToken{}, err
 	} else if err != nil {
 		return types.RefreshToken{}, errors.Wrap(err, "error on collecting row")
 	}

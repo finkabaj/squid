@@ -18,9 +18,9 @@ type RegisterUser struct {
 	Username    string    `json:"username" validate:"required,min=3,max=50"`
 	FirstName   string    `json:"first_name" validate:"required,min=3,max=100"`
 	LastName    string    `json:"last_name" validate:"required,min=3,max=100"`
-	DateOfBirth time.Time `json:"date_of_birth" validate:"required,date"`
+	DateOfBirth time.Time `json:"date_of_birth" validate:"required,date_of_birth"`
 	Email       string    `json:"email" validate:"required,email"`
-	Password    string    `json:"password" validate:"required,min=8,max=100"`
+	Password    string    `json:"password" validate:"required,min=8,max=50"`
 }
 
 type Login struct {

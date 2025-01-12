@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/finkabaj/squid/back/internal/controller"
+	"github.com/go-chi/chi/v5/middleware"
 	"net/http"
 	"os"
 	"time"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/finkabaj/squid/back/internal/logger"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 )
 
@@ -47,11 +48,11 @@ func main() {
 	defer repository.Close()
 
 	r := chi.NewRouter()
-	if os.Getenv("ENV") == "development" {
-		r.Use(middleware.Logger)
-	} else {
-		r.Use(middleware.Recoverer)
-	}
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	controller.RegisterAuthRoutes(r)
+
 	host := os.Getenv("HOST")
 	port := os.Getenv("PORT")
 	server := http.Server{

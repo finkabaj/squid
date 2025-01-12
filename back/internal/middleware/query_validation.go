@@ -9,7 +9,7 @@ import (
 
 type validateQueryCtxKey struct{}
 
-// Validation middleware for query params. Decoder function should decode query based on RawQuery.
+// ValidateQuery Validation middleware for query params. Decoder function should decode query based on RawQuery.
 func ValidateQuery[T any](decoder func(q string) T) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

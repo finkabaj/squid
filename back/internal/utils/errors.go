@@ -1,105 +1,118 @@
 package utils
 
 import (
+	"encoding/json"
 	"net/http"
 
-	"github.com/pkg/errors"
+	"github.com/finkabaj/squid/back/internal/logger"
 )
+
+type ErrorType struct {
+	Status  int
+	Message string
+}
 
 var (
-	ErrBadRequest = errors.New("bad request")
-	ErrNotFound   = errors.New("not found")
-	ErrInternal   = errors.New("internal error")
+	ErrorTypeBadRequest = ErrorType{
+		Status:  http.StatusBadRequest,
+		Message: "bad request",
+	}
+	ErrorTypeUnauthorized = ErrorType{
+		Status:  http.StatusUnauthorized,
+		Message: "unauthorized",
+	}
+	ErrorTypeNotFound = ErrorType{
+		Status:  http.StatusNotFound,
+		Message: "not found",
+	}
+	ErrorTypeInternal = ErrorType{
+		Status:  http.StatusInternalServerError,
+		Message: "internal server error",
+	}
+	ErrorTypeValidation = ErrorType{
+		Status:  http.StatusBadRequest,
+		Message: "validation error",
+	}
 )
 
+type AppError struct {
+	Type          ErrorType
+	OriginalError error
+	Fields        map[string]string // For validation errors
+}
+
+func (e AppError) Error() string {
+	if e.OriginalError != nil {
+		return e.OriginalError.Error()
+	}
+	return e.Type.Message
+}
+
+func NewValidationError(fields map[string]string) error {
+	return AppError{
+		Type:   ErrorTypeValidation,
+		Fields: fields,
+	}
+}
+
+func NewBadRequestError(err error) error {
+	return AppError{
+		Type:          ErrorTypeBadRequest,
+		OriginalError: err,
+	}
+}
+
+func NewInternalError(err error) error {
+	return AppError{
+		Type:          ErrorTypeInternal,
+		OriginalError: err,
+	}
+}
+
+func NewUnauthorizedError(err error) error {
+	return AppError{
+		Type:          ErrorTypeUnauthorized,
+		OriginalError: err,
+	}
+}
+
+func NewNotFoundError(err error) error {
+	return AppError{
+		Type:          ErrorTypeNotFound,
+		OriginalError: err,
+	}
+}
+
 type ErrorResponse struct {
-	Error            string            `json:"error,omitempty"`
-	Status           int               `json:"status,omitempty"`
-	Message          string            `json:"message,omitempty"`
-	ValidationErrors map[string]string `json:"validation_errors,omitempty"`
+	Error   string            `json:"error"`
+	Message string            `json:"message,omitempty"`
+	Status  int               `json:"status"`
+	Fields  map[string]string `json:"fields,omitempty"`
 }
 
-type ErrorResponseBuilder interface {
-	SetMessage(m string) ErrorResponseBuilder
-	SetValidationFields(fields map[string]string) ErrorResponseBuilder
-	SetStatus(s int) ErrorResponseBuilder
-	Send(w http.ResponseWriter) error
-	Get() *ErrorResponse
-}
+// HandleError Single error handling function
+func HandleError(w http.ResponseWriter, err error) {
+	var response ErrorResponse
 
-type errorResponseBuilder struct {
-	errorResponse *ErrorResponse
-}
-
-func NewErrorResponseBuilder(err error) ErrorResponseBuilder {
-	return &errorResponseBuilder{
-		errorResponse: &ErrorResponse{
-			Error: err.Error(),
-		},
-	}
-}
-
-func (e *errorResponseBuilder) SetMessage(m string) ErrorResponseBuilder {
-	e.errorResponse.Message = m
-	return e
-}
-
-func (e *errorResponseBuilder) SetValidationFields(fields map[string]string) ErrorResponseBuilder {
-	e.errorResponse.ValidationErrors = fields
-	return e
-}
-
-func (e *errorResponseBuilder) SetStatus(s int) ErrorResponseBuilder {
-	e.errorResponse.Status = s
-	return e
-}
-
-// Send sends the error response to the client with the status code. If the status code is not set, it will default to 500.
-// Returns an error if the response could not be sent.
-func (e *errorResponseBuilder) Send(w http.ResponseWriter) (err error) {
-	if e.errorResponse.Status == 0 {
-		e.errorResponse.Status = http.StatusInternalServerError
+	switch e := err.(type) {
+	case AppError:
+		response = ErrorResponse{
+			Error:   e.Error(),
+			Message: e.Type.Message,
+			Status:  e.Type.Status,
+			Fields:  e.Fields,
+		}
+		logger.Logger.Debug().Err(e.OriginalError).Stack()
+	default:
+		response = ErrorResponse{
+			Error:   "internal server error",
+			Message: ErrorTypeInternal.Message,
+			Status:  http.StatusInternalServerError,
+		}
+		logger.Logger.Error().Err(err).Stack().Msg("Unexpected error")
 	}
 
-	err = MarshalBody(w, e.errorResponse.Status, e.errorResponse)
-
-	return
-}
-
-func (e *errorResponseBuilder) Get() *ErrorResponse {
-	return e.errorResponse
-}
-
-func SendBadRequestError(w http.ResponseWriter, m ...string) {
-	b := NewErrorResponseBuilder(ErrBadRequest).
-		SetStatus(http.StatusBadRequest)
-	if len(m) == 1 {
-		b.SetMessage(m[0])
-	}
-	b.Send(w)
-}
-
-func SendValidationError(w http.ResponseWriter, valFields map[string]string) {
-	NewErrorResponseBuilder(ErrValidation).
-		SetStatus(http.StatusBadRequest).
-		SetValidationFields(valFields).
-		Send(w)
-}
-
-func SendInternalError(w http.ResponseWriter, m ...string) {
-	b := NewErrorResponseBuilder(ErrInternal).
-		SetStatus(http.StatusInternalServerError)
-	if len(m) == 1 {
-		b.SetMessage(m[0])
-	}
-	b.Send(w)
-}
-
-func SendNotFoundError(w http.ResponseWriter, m ...string) {
-	b := NewErrorResponseBuilder(ErrNotFound).
-		SetStatus(http.StatusNotFound)
-	if len(m) == 1 {
-		b.SetMessage(m[0])
-	}
-	b.Send(w)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.Status)
+	json.NewEncoder(w).Encode(response)
 }
