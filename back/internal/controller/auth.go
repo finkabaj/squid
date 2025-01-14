@@ -22,8 +22,8 @@ func RegisterAuthRoutes(r *chi.Mux) {
 	r.Route("/auth", func(r chi.Router) {
 		r.With(middleware.ValidateJson[types.Login]()).Post("/login", login)
 		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", register)
-		r.With(middleware.ValidateJWTRefresh).Post("/refresh", refreshToken)
-		r.With(middleware.ValidateJWTAuth).Post("/check", checkToken)
+		r.With(middleware.ValidateJson[types.RefreshTokenRequest]()).Post("/refresh", refreshToken)
+		r.With(middleware.ValidateJWT).Post("/check", checkToken)
 	})
 
 	authControllerInitialized = true
@@ -44,7 +44,7 @@ func register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, user); err != nil {
+	if err = utils.MarshalBody(w, http.StatusCreated, user); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
 	}
 }
@@ -69,6 +69,30 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func refreshToken(w http.ResponseWriter, r *http.Request) {}
+func refreshToken(w http.ResponseWriter, r *http.Request) {
+	refreshToken, ok := middleware.JsonFromContext(r.Context()).(types.RefreshTokenRequest)
 
-func checkToken(w http.ResponseWriter, r *http.Request) {}
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get refresh token from context")))
+		return
+	}
+
+	tokens, err := service.RefreshToken(&refreshToken.RefreshToken)
+
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, tokens); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal user"))
+	}
+}
+
+func checkToken(w http.ResponseWriter, r *http.Request) {
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{
+		Message: "Token is valid",
+	}); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal ok response"))
+	}
+}

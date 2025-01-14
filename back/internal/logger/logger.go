@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"github.com/finkabaj/squid/back/internal/config"
 	"io"
 	"os"
 
@@ -17,7 +18,7 @@ func InitLogger(fs *os.File) {
 
 	var target io.Writer
 
-	if os.Getenv("ENV") == "development" {
+	if config.Data.Env == "development" {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		consoleWriter := zerolog.ConsoleWriter{
 			Out:        os.Stdout,

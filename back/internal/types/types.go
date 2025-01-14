@@ -14,6 +14,16 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+type AuthUser struct {
+	User      User      `json:"user"`
+	TokenPair TokenPair `json:"token_pair"`
+}
+
 type RegisterUser struct {
 	Username    string    `json:"username" validate:"required,min=3,max=50"`
 	FirstName   string    `json:"first_name" validate:"required,min=3,max=100"`
@@ -28,32 +38,20 @@ type Login struct {
 	Password string `json:"password" validate:"required,min=8,max=100"`
 }
 
-type AuthResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in"`
-	RefreshToken string `json:"refresh_token"`
-}
-
-type JWT struct {
-	UserID    string
-	Email     string
-	Username  string
-	IssuedAt  time.Time
-	ExpiresAt time.Time
-}
-
 type RefreshToken struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
-	TokenHash string    `json:"-"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}
+
 type DBCredentials struct {
 	Host     string
-	Port     string
+	Port     int
 	User     string
 	Password string
 	Database string

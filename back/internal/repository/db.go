@@ -20,13 +20,12 @@ func simpleDelete(ctx context.Context, id *string, tableName string, fieldName s
 
 	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "%s" = $1`, tableName, fieldName)
 
-	row, err := pool.Query(ctx, query, *id)
+	result, err := pool.Exec(ctx, query, *id)
 	if err != nil {
-		return errors.Wrap(err, "error executing query")
+		return errors.Wrap(err, "error executing delete")
 	}
-	defer row.Close()
 
-	if !row.Next() {
+	if result.RowsAffected() == 0 {
 		return errors.New("no rows were deleted")
 	}
 
@@ -58,15 +57,6 @@ func setup() (err error) {
 		    RETURN NEW;   
 		END;
 		$$ language 'plpgsql';
-		
-		CREATE OR REPLACE FUNCTION set_created_at_column()   
-		RETURNS TRIGGER AS $$
-		BEGIN
-		    NEW."createdAt" = CURRENT_TIMESTAMP;
-		    NEW."updatedAt" = CURRENT_TIMESTAMP;
-		    RETURN NEW;   
-		END;
-		$$ language 'plpgsql';	
 		`); err != nil {
 		return errors.Wrap(err, "Error creating update_updated_at_column and set_created_at_column functions")
 	}
@@ -85,12 +75,6 @@ func setup() (err error) {
         );
         CREATE INDEX IF NOT EXISTS idx_users_email ON "users"("email");
     
-		DROP TRIGGER IF EXISTS set_users_created_at on "public"."users";
-		CREATE TRIGGER set_users_created_at
-            BEFORE INSERT ON "users"
-            FOR EACH ROW
-            EXECUTE FUNCTION set_created_at_column();
-
 		DROP TRIGGER IF EXISTS update_users_updated_at on "public"."users";
         CREATE TRIGGER update_users_updated_at
             BEFORE UPDATE ON "users"
@@ -103,19 +87,12 @@ func setup() (err error) {
 	if _, err = transaction.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS "refreshTokens" (
 		    "id" VARCHAR(255) PRIMARY KEY,
-		    "userId" VARCHAR(255) NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
-		    "tokenHash" VARCHAR(255) NOT NULL,
+		    "userID" VARCHAR(255) NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
 		    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			"expiresAt" TIMESTAMP NOT NULL
 		);
-        CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON "refreshTokens"("userId");
+        CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON "refreshTokens"("userID");
         CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON "refreshTokens"("expiresAt");
-
-		DROP TRIGGER IF EXISTS set_refresh_tokens_created_at on "public"."refreshTokens";
-		CREATE TRIGGER set_refresh_tokens_created_at
-            BEFORE INSERT ON "refreshTokens"
-            FOR EACH ROW
-            EXECUTE FUNCTION set_created_at_column();
 		`); err != nil {
 		return errors.Wrap(err, "error creating refreshTokens table")
 	}
@@ -124,8 +101,31 @@ func setup() (err error) {
 }
 
 func Connect(credentials types.DBCredentials) (err error) {
-	connStr := fmt.Sprintf("user=%s password=%s host=%s port=%s dbname=%s sslmode=disable", credentials.User, credentials.Password, credentials.Host, credentials.Port, credentials.Database)
-	pool, err = pgxpool.New(context.Background(), connStr)
+	config, err := pgxpool.ParseConfig(fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		credentials.User,
+		credentials.Password,
+		credentials.Host,
+		credentials.Port,
+		credentials.Database))
+
+	if err != nil {
+		return errors.Wrap(err, "error parsing config")
+	}
+
+	config.MaxConns = 25
+	config.MinConns = 5
+	config.MaxConnLifetime = 24 * time.Hour
+	config.MaxConnIdleTime = 30 * time.Minute
+	config.HealthCheckPeriod = 1 * time.Minute
+	config.ConnConfig.ConnectTimeout = 5 * time.Second
+
+	config.ConnConfig.RuntimeParams = map[string]string{
+		"application_name": "squid",
+		"search_path":      "public",
+		"timezone":         "UTC",
+	}
+
+	pool, err = pgxpool.NewWithConfig(context.Background(), config)
 
 	if err != nil {
 		return errors.Wrap(err, "error on db setup")
@@ -135,13 +135,14 @@ func Connect(credentials types.DBCredentials) (err error) {
 		return errors.Wrap(err, "error on checking db status")
 	}
 
-	err = setup()
-
-	return
+	return setup()
 }
 
-func Close() {
-	pool.Close()
+func Close() error {
+	if pool != nil {
+		pool.Close()
+	}
+	return nil
 }
 
 func Status() (err error) {
@@ -211,18 +212,18 @@ func DeleteUser(ctx context.Context, id *string) error {
 	return simpleDelete(ctx, id, "users", "id")
 }
 
-func CreateRefreshToken(ctx context.Context, id *string, userID *string, tokenHash *string, expiresAt *time.Time) (types.RefreshToken, error) {
-	if id == nil || userID == nil || tokenHash == nil || expiresAt == nil {
+func CreateRefreshToken(ctx context.Context, id *string, userID *string, expiresAt *time.Time) (types.RefreshToken, error) {
+	if id == nil || userID == nil || expiresAt == nil {
 		return types.RefreshToken{}, errors.New("All arguments must be not nil")
 	}
 
 	query := `
-        INSERT INTO "refreshTokens" ("id", "userId", "tokenHash", "expiresAt")
-        VALUES ($1, $2, $3, $4) 
+        INSERT INTO "refreshTokens" ("id", "userID", "expiresAt")
+        VALUES ($1, $2, $3) 
         RETURNING *
     `
 
-	row, err := pool.Query(ctx, query, *id, *userID, *tokenHash, *expiresAt)
+	row, err := pool.Query(ctx, query, *id, *userID, *expiresAt)
 	if err != nil {
 		return types.RefreshToken{}, errors.Wrap(err, "error executing query")
 	}
@@ -237,8 +238,8 @@ func CreateRefreshToken(ctx context.Context, id *string, userID *string, tokenHa
 	return refreshToken, nil
 }
 
-func DeleteRefreshToken(ctx context.Context, id *string) error {
-	return simpleDelete(ctx, id, "refreshTokens", "id")
+func DeleteRefreshToken(ctx context.Context, userID *string) error {
+	return simpleDelete(ctx, userID, "refreshTokens", "userID")
 }
 
 func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error) {

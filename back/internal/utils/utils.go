@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"reflect"
-	"strconv"
+	"time"
+
+	"github.com/finkabaj/squid/back/internal/config"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -67,29 +68,8 @@ func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, 
 	return
 }
 
-var secret = os.Getenv("JWT_SECRET")
-
-func CreateJWTAuth(username, email *string) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": *username,
-		"email":    *email,
-	})
-
-	tokenStr, err := token.SignedString(secret)
-
-	if err != nil {
-		return "", err
-	}
-
-	return tokenStr, nil
-}
-
 func HashPassword(password *string) (string, error) {
-	saltRounds, err := strconv.Atoi(os.Getenv("SALT_ROUNDS"))
-	if err != nil {
-		return "", errors.New("SALT_ROUNDS env var not set")
-	}
-	bytes, err := bcrypt.GenerateFromPassword([]byte(*password), saltRounds)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(*password), config.Data.SaltRounds)
 	return string(bytes), err
 }
 
@@ -98,14 +78,59 @@ func CheckPasswordHash(password, hash *string) bool {
 	return err == nil
 }
 
-func CreateJWTRefresh(refresh types.RefreshToken) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{})
+func CreateJWTRefresh(refreshToken *types.RefreshToken) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":         refreshToken.ID,
+		"user_id":    refreshToken.UserID,
+		"created_at": refreshToken.CreatedAt.Unix(),
+		"expires_at": refreshToken.ExpiresAt.Unix(),
+	})
 
-	tokenStr, err := token.SignedString(secret)
+	tokenStr, err := token.SignedString(config.Data.JWTSecret)
 
 	if err != nil {
 		return "", err
 	}
 
 	return tokenStr, nil
+}
+
+func CreateJWT(user *types.User) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":    user.ID,
+		"email":      user.Email,
+		"created_at": time.Now().Unix(),
+		"expires_at": time.Now().Add(time.Minute * time.Duration(config.Data.AccessTokenExpMinutes)).Unix(),
+	})
+
+	tokenStr, err := token.SignedString(config.Data.JWTSecret)
+
+	if err != nil {
+		return "", err
+	}
+
+	return tokenStr, nil
+}
+
+func CreateJWTPair(user *types.User, refreshToken *types.RefreshToken) (map[string]string, error) {
+	if refreshToken == nil || user == nil {
+		return nil, errors.New("refresh token or user is nil")
+	}
+
+	refreshTokenStr, err := CreateJWTRefresh(refreshToken)
+
+	if err != nil {
+		return nil, err
+	}
+
+	accessTokenStr, err := CreateJWT(user)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]string{
+		"refreshToken": refreshTokenStr,
+		"accessToken":  accessTokenStr,
+	}, nil
 }

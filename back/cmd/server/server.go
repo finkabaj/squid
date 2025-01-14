@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/finkabaj/squid/back/internal/config"
 	"github.com/finkabaj/squid/back/internal/controller"
 	"github.com/go-chi/chi/v5/middleware"
 	"net/http"
@@ -24,21 +25,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	fnameLogOut := os.Getenv("FNAME_LOG_OUT")
-	fs, err := os.OpenFile(fnameLogOut, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
+	if err = config.Initialize(); err != nil {
+		fmt.Printf("Error initializing config: %s", err.Error())
+	}
+
+	fs, err := os.OpenFile(config.Data.FilenameLogOutput, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
-		fmt.Printf("Error opening log file: %s with error %s", fnameLogOut, err.Error())
+		fmt.Printf("Error opening log file: %s with error %s", config.Data.FilenameLogOutput, err.Error())
 		os.Exit(1)
 	}
 	defer fs.Close()
 	logger.InitLogger(fs)
 
 	dbCredentials := types.DBCredentials{
-		Host:     os.Getenv("POSTGRES_HOST"),
-		Port:     os.Getenv("POSTGRES_PORT"),
-		User:     os.Getenv("POSTGRES_USER"),
-		Password: os.Getenv("POSTGRES_PASSWORD"),
-		Database: os.Getenv("POSTGRES_DB"),
+		Host:     config.Data.PostgresHost,
+		Port:     config.Data.PostgresPort,
+		User:     config.Data.PostgresUser,
+		Password: config.Data.PostgresPassword,
+		Database: config.Data.PostgresDatabase,
 	}
 
 	if err = repository.Connect(dbCredentials); err != nil {
@@ -53,10 +57,8 @@ func main() {
 
 	controller.RegisterAuthRoutes(r)
 
-	host := os.Getenv("HOST")
-	port := os.Getenv("PORT")
 	server := http.Server{
-		Addr:         fmt.Sprintf("%s:%s", host, port),
+		Addr:         fmt.Sprintf("%s:%d", config.Data.Host, config.Data.Port),
 		Handler:      r,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
