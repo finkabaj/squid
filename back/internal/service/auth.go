@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 	"fmt"
+
 	"github.com/finkabaj/squid/back/internal/config"
 	"github.com/golang-jwt/jwt/v5"
+
+	"net/http"
+	"time"
 
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"
@@ -12,8 +16,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
-	"net/http"
-	"time"
 )
 
 func Register(user *types.RegisterUser) (types.AuthUser, error) {
@@ -202,7 +204,21 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 		return types.TokenPair{}, utils.NewInternalError(err)
 	}
 
-	jwtPair, err := utils.CreateJWTPair(&user, &refreshToken)
+	err = repository.DeleteRefreshToken(ctx, &refreshToken.UserID)
+	if err != nil {
+		return types.TokenPair{}, utils.NewInternalError(err)
+	}
+
+	newTokenID := uuid.New().String()
+	expAt := time.Now().Add(time.Hour * time.Duration(config.Data.RefreshTokenExpHours))
+
+	newRefreshToken, err := repository.CreateRefreshToken(ctx, &newTokenID, &user.ID, &expAt)
+
+	if err != nil {
+		return types.TokenPair{}, utils.NewInternalError(err)
+	}
+
+	jwtPair, err := utils.CreateJWTPair(&user, &newRefreshToken)
 
 	if err != nil {
 		return types.TokenPair{}, utils.NewInternalError(err)
