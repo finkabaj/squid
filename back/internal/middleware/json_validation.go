@@ -64,9 +64,11 @@ func ValidateJson[T any]() func(http.Handler) http.Handler {
 			defer body.Close()
 
 			var v T
-
 			if err := utils.UnmarshalBody(body, &v); err == io.EOF {
 				utils.HandleError(w, utils.NewBadRequestError(errors.New("empty body")))
+				return
+			} else if err != nil {
+				utils.HandleError(w, err)
 				return
 			}
 
