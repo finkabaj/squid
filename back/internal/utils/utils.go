@@ -31,10 +31,10 @@ func MarshalBody(w http.ResponseWriter, status int, v any) (err error) {
 }
 
 // UnmarshalBody Reads json body to v. Body is ReadCloser
-func UnmarshalBody(body io.ReadCloser, v any) (err error) {
-	err = json.NewDecoder(body).Decode(v)
-
-	return
+func UnmarshalBody(body io.ReadCloser, v any) error {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(v)
 }
 
 func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, v any) (haveError bool) {
