@@ -72,6 +72,16 @@ type Project struct {
 	Columns *[]KanbanColumn `json:"columns,omitempty"`
 }
 
+type ProjectAdmin struct {
+	ProjectID string `json:"project_id"`
+	UserID    string `json:"user_id"`
+}
+
+type ProjectMember struct {
+	ProjectID string `json:"project_id"`
+	UserID    string `json:"user_id"`
+}
+
 type CreateProject struct {
 	AdminIDs    []string `json:"admin_ids" validate:"dive,uuid"`
 	MembersIDs  []string `json:"members_ids" validate:"dive,uuid"`

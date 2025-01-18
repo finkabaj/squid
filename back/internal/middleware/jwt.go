@@ -3,15 +3,16 @@ package middleware
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/finkabaj/squid/back/internal/config"
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pkg/errors"
-	"net/http"
-	"strings"
-	"time"
 )
 
 type validateJWTCtxKey struct{}
