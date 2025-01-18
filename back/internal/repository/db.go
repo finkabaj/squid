@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/finkabaj/squid/back/internal/types"
-	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
 )
@@ -31,6 +31,110 @@ func simpleDelete(ctx context.Context, id *string, tableName string, fieldName s
 	}
 
 	return nil
+}
+
+func bulkInsert(ctx context.Context, tx pgx.Tx, tableName string, columns []string, rows [][]interface{}) error {
+	if len(rows) == 0 {
+		return nil
+	}
+
+	copyCount, err := tx.CopyFrom(ctx,
+		pgx.Identifier{tableName},
+		columns,
+		pgx.CopyFromRows(rows),
+	)
+	if err != nil {
+		return errors.Wrapf(err, "error copying rows to %s", tableName)
+	}
+
+	if int(copyCount) != len(rows) {
+		return errors.Errorf("expected to copy %d rows, got %d", len(rows), copyCount)
+	}
+
+	return nil
+}
+
+func withTx[T any](ctx context.Context, f func(pgx.Tx) (T, error)) (T, error) {
+	var result T
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return result, errors.Wrap(err, "error starting transaction")
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback(ctx)
+		} else {
+			tx.Commit(ctx)
+		}
+	}()
+
+	return f(tx)
+}
+
+func insertReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
+	var result T
+	row, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return result, errors.Wrap(err, "error executing query")
+	}
+	defer row.Close()
+
+	result, err = pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[T])
+	if err != nil {
+		return result, errors.Wrap(err, "error collecting row")
+	}
+	return result, nil
+}
+
+func selectOneReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
+	var result T
+	row, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return result, errors.Wrap(err, "error executing query")
+	}
+	defer row.Close()
+
+	result, err = pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[T])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, err
+	} else if err != nil {
+		return result, errors.Wrap(err, "error collecting row")
+	}
+
+	return result, nil
+}
+
+func selectReturning[T any](ctx context.Context, query string, args ...interface{}) ([]T, error) {
+	var result []T
+	rows, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return result, errors.Wrap(err, "error executing query")
+	}
+	defer rows.Close()
+
+	result, err = pgx.CollectRows(rows, pgx.RowToStructByName[T])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, err
+	} else if err != nil {
+		return result, errors.Wrap(err, "error collecting row")
+	}
+
+	return result, nil
+}
+
+func insertReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
+	var result T
+	row, err := tx.Query(ctx, query, args...)
+	if err != nil {
+		return result, errors.Wrap(err, "error executing query")
+	}
+	defer row.Close()
+
+	result, err = pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[T])
+	if err != nil {
+		return result, errors.Wrap(err, "error collecting row")
+	}
+	return result, nil
 }
 
 func setup() (err error) {
@@ -105,7 +209,7 @@ func setup() (err error) {
 		    "name" VARCHAR(50) NOT NULL,
 		    "description" VARCHAR(500),
 		    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		    "updatedAt" TIMESTAMP NOT NULL
+		    "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
 		CREATE TABLE "projectAdmins" (
@@ -134,20 +238,6 @@ func setup() (err error) {
 	}
 
 	if _, err = transaction.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS "kanbanColumns" (
-		    "id" VARCHAR(255) PRIMARY KEY,
-		    "projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
-		    "name" VARCHAR(50) NOT NULL,
-		    "order" INTEGER NOT NULL,
-		    "labelID" VARCHAR(255) REFERENCES "kanbanColumnLabels"("id")
-		);
-
-		CREATE INDEX idx_kanban_columns_project ON "kanbanColumns"("projectID");
-	`); err != nil {
-		return errors.Wrap(err, "error creating kanbanColumns table")
-	}
-
-	if _, err = transaction.Exec(ctx, `
 		CREATE TYPE IF NOT EXISTS "specialTags" AS ENUM ('TODO', 'IN_PROGRESS', 'TESTING', 'COMPLETED');
 
 		CREATE TABLE IF NOT EXISTS "kanbanColumnLabels" (
@@ -161,6 +251,20 @@ func setup() (err error) {
 		CREATE INDEX idx_kanban_column_labels_project ON "kanbanColumnLabels"("projectID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating kanbanColumnLabels table")
+	}
+
+	if _, err = transaction.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS "kanbanColumns" (
+		    "id" VARCHAR(255) PRIMARY KEY,
+		    "projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
+		    "name" VARCHAR(50) NOT NULL,
+		    "order" INTEGER NOT NULL,
+		    "labelID" VARCHAR(255) REFERENCES "kanbanColumnLabels"("id")
+		);
+
+		CREATE INDEX idx_kanban_columns_project ON "kanbanColumns"("projectID");
+	`); err != nil {
+		return errors.Wrap(err, "error creating kanbanColumns table")
 	}
 
 	if _, err = transaction.Exec(ctx, `
@@ -326,158 +430,4 @@ func Close() error {
 func Status() (err error) {
 	err = pool.Ping(context.Background())
 	return
-}
-
-func CreateUser(ctx context.Context, id *string, passwordHash *string, user *types.RegisterUser) (types.User, error) {
-	if id == nil || passwordHash == nil || user == nil {
-		return types.User{}, errors.New("All arguments must be not nil")
-	}
-
-	query := `
-        INSERT INTO "users" ("id", "username", "firstName", "lastName", "dateOfBirth", "email", "passwordHash")
-        VALUES ($1, $2, $3, $4, $5, $6, $7) 
-        RETURNING *
-    `
-
-	row, err := pool.Query(ctx, query, *id, user.Username, user.FirstName, user.LastName, user.DateOfBirth, user.Email, passwordHash)
-	if err != nil {
-		return types.User{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	newUser, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
-
-	if err != nil {
-		return types.User{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return newUser, nil
-}
-
-func GetUser(ctx context.Context, id *string, email *string) (types.User, error) {
-	if id == nil && email == nil {
-		return types.User{}, errors.New("At least one arguments must not be nil")
-	}
-
-	var row pgx.Rows
-	var err error
-
-	if id != nil {
-		query := `SELECT * FROM "users" WHERE "id" = $1`
-		row, err = pool.Query(ctx, query, *id)
-	} else {
-		query := `SELECT * FROM "users" WHERE "email" = $1`
-		row, err = pool.Query(ctx, query, *email)
-	}
-
-	if err != nil {
-		return types.User{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	user, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return types.User{}, err
-	} else if err != nil {
-		return types.User{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return user, nil
-}
-
-func DeleteUser(ctx context.Context, id *string) error {
-	return simpleDelete(ctx, id, "users", "id")
-}
-
-func CreateRefreshToken(ctx context.Context, id *string, userID *string, expiresAt *time.Time) (types.RefreshToken, error) {
-	if id == nil || userID == nil || expiresAt == nil {
-		return types.RefreshToken{}, errors.New("All arguments must be not nil")
-	}
-
-	query := `
-        INSERT INTO "refreshTokens" ("id", "userID", "expiresAt")
-        VALUES ($1, $2, $3) 
-        RETURNING *
-    `
-
-	row, err := pool.Query(ctx, query, *id, *userID, *expiresAt)
-	if err != nil {
-		return types.RefreshToken{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	refreshToken, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.RefreshToken])
-
-	if err != nil {
-		return types.RefreshToken{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return refreshToken, nil
-}
-
-func DeleteRefreshToken(ctx context.Context, userID *string) error {
-	return simpleDelete(ctx, userID, "refreshTokens", "userID")
-}
-
-func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error) {
-	if id == nil {
-		return types.RefreshToken{}, errors.New("All arguments must be not nil")
-	}
-
-	query := `SELECT * FROM "refreshTokens" WHERE "id" = $1`
-
-	row, err := pool.Query(ctx, query, *id)
-	if err != nil {
-		return types.RefreshToken{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	refreshToken, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.RefreshToken])
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return types.RefreshToken{}, err
-	} else if err != nil {
-		return types.RefreshToken{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return refreshToken, nil
-}
-
-func UpdateUser(ctx context.Context, user *types.User, updateUser *types.UpdateUser, passwordHash *string) (types.User, error) {
-	if (updateUser == nil) == (passwordHash == nil) {
-		return types.User{}, errors.New("Eather updateUser or passwordHash should not be nil")
-	}
-
-	var row pgx.Rows
-	var err error
-
-	if updateUser != nil {
-		query := `UPDATE "users" SET "username"=$1, "firstName"=$2, "lastName"=$3, "dateOfBirth"=$4 WHERE "id"=$5 RETURNING *`
-		row, err = pool.Query(ctx, query,
-			utils.UpdateSelector(updateUser.Username, &user.Username),
-			utils.UpdateSelector(updateUser.FirstName, &user.FirstName),
-			utils.UpdateSelector(updateUser.LastName, &user.LastName),
-			utils.UpdateSelector(updateUser.DateOfBirth, &user.DateOfBirth),
-			user.ID,
-		)
-	} else {
-		query := `UPDATE "users" SET "passwordHash"=$1 WHERE "id"=$2 RETURNING *`
-		row, err = pool.Query(ctx, query, passwordHash, user.ID)
-	}
-
-	if err != nil {
-		return types.User{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	busser, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return types.User{}, err
-	} else if err != nil {
-		return types.User{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return busser, nil
 }

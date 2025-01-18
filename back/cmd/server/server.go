@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/finkabaj/squid/back/internal/config"
-	"github.com/finkabaj/squid/back/internal/controller"
-	"github.com/go-chi/chi/v5/middleware"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/finkabaj/squid/back/internal/config"
+	"github.com/finkabaj/squid/back/internal/controller"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"

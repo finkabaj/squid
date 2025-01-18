@@ -143,3 +143,22 @@ func UpdateSelector[T any](update *T, current *T) *T {
 
 	return current
 }
+func Map[T any, F any](mapper func(int, T) F, values []T) []F {
+	result := make([]F, len(values))
+
+	for i, v := range values {
+		result[i] = mapper(i, v)
+	}
+
+	return result
+}
+
+func Have[T any](haveF func(int, T) bool, data []T) bool {
+	for i, v := range data {
+		if haveF(i, v) {
+			return true
+		}
+	}
+
+	return false
+}
