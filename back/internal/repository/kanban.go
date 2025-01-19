@@ -15,11 +15,11 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 	}
 
 	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
-		newProject, err := insertReturningTx[types.Project](ctx, tx, `
+		newProject, err := queryReturningTx[types.Project](ctx, tx, `
         INSERT INTO "projects" ("id", "creatorID", "name", "description")
         VALUES ($1, $2, $3, $4)
         RETURNING *
-    `, *id, *creatorID, project.Name, project.Description)
+    `, id, creatorID, project.Name, project.Description)
 
 		if err != nil {
 			return types.Project{}, err
@@ -27,10 +27,10 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 
 		adminRows := make([][]interface{}, len(project.AdminIDs))
 
-		for _, userID := range project.AdminIDs {
-			adminRows = append(adminRows, []interface{}{
+		for i, userID := range project.AdminIDs {
+			adminRows[i] = []interface{}{
 				newProject.ID, userID,
-			})
+			}
 		}
 
 		if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
@@ -39,10 +39,10 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 
 		memberRows := make([][]interface{}, len(project.MembersIDs))
 
-		for _, userID := range project.MembersIDs {
-			memberRows = append(memberRows, []interface{}{
+		for i, userID := range project.MembersIDs {
+			memberRows[i] = []interface{}{
 				newProject.ID, userID,
-			})
+			}
 		}
 
 		if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
@@ -59,13 +59,13 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 	}
 
 	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
-		project, err := selectOneReturning[types.Project](ctx, `SELECT * FROM "projects" WHERE id = $1`, *id)
+		project, err := queryOneReturning[types.Project](ctx, `SELECT * FROM "projects" WHERE id = $1`, id)
 
 		if err != nil {
 			return types.Project{}, err
 		}
 
-		admins, err := selectReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE projectID = $1`, *id)
+		admins, err := queryReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE projectID = $1`, id)
 
 		if err != nil {
 			return types.Project{}, err
@@ -75,7 +75,7 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 			return admin.UserID
 		}, admins)
 
-		members, err := selectReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE projectID = $1`, *id)
+		members, err := queryReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE projectID = $1`, id)
 
 		if err != nil {
 			return types.Project{}, err
