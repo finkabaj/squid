@@ -134,3 +134,12 @@ func CreateJWTPair(user *types.User, refreshToken *types.RefreshToken) (map[stri
 		"accessToken":  accessTokenStr,
 	}, nil
 }
+
+// DO NOT USE if don't know what it for!!!
+func UpdateSelector[T any](update *T, current *T) *T {
+	if update != nil {
+		return update
+	}
+
+	return current
+}
