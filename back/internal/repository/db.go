@@ -14,25 +14,6 @@ import (
 
 var pool *pgxpool.Pool
 
-func simpleDelete(ctx context.Context, id *string, tableName string, fieldName string) error {
-	if id == nil {
-		return errors.New("All arguments must be not nil")
-	}
-
-	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "%s" = $1`, tableName, fieldName)
-
-	result, err := pool.Exec(ctx, query, *id)
-	if err != nil {
-		return errors.Wrap(err, "error executing delete")
-	}
-
-	if result.RowsAffected() == 0 {
-		return errors.New("no rows were deleted")
-	}
-
-	return nil
-}
-
 func bulkInsert(ctx context.Context, tx pgx.Tx, tableName string, columns []string, rows [][]interface{}) error {
 	if len(rows) == 0 {
 		return nil
@@ -71,22 +52,7 @@ func withTx[T any](ctx context.Context, f func(pgx.Tx) (T, error)) (T, error) {
 	return f(tx)
 }
 
-func insertReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
-	var result T
-	row, err := pool.Query(ctx, query, args...)
-	if err != nil {
-		return result, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	result, err = pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[T])
-	if err != nil {
-		return result, errors.Wrap(err, "error collecting row")
-	}
-	return result, nil
-}
-
-func selectOneReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
+func queryOneReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
 	var result T
 	row, err := pool.Query(ctx, query, args...)
 	if err != nil {
@@ -104,7 +70,7 @@ func selectOneReturning[T any](ctx context.Context, query string, args ...interf
 	return result, nil
 }
 
-func selectReturning[T any](ctx context.Context, query string, args ...interface{}) ([]T, error) {
+func queryReturning[T any](ctx context.Context, query string, args ...interface{}) ([]T, error) {
 	var result []T
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
@@ -122,7 +88,7 @@ func selectReturning[T any](ctx context.Context, query string, args ...interface
 	return result, nil
 }
 
-func insertReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
+func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
 	var result T
 	row, err := tx.Query(ctx, query, args...)
 	if err != nil {

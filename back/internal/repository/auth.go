@@ -6,7 +6,6 @@ import (
 
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
-	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
 )
 
@@ -15,16 +14,11 @@ func CreateUser(ctx context.Context, id *string, passwordHash *string, user *typ
 		return types.User{}, errors.New("All arguments must be not nil")
 	}
 
-	newUser, err := insertReturning[types.User](ctx, `
+	return queryOneReturning[types.User](ctx, `
         INSERT INTO "users" ("id", "username", "firstName", "lastName", "dateOfBirth", "email", "passwordHash")
         VALUES ($1, $2, $3, $4, $5, $6, $7) 
         RETURNING *
-    `, *id, user.Username, user.FirstName, user.LastName, user.DateOfBirth, user.Email, passwordHash)
-	if err != nil {
-		return types.User{}, err
-	}
-
-	return newUser, nil
+    `, id, user.Username, user.FirstName, user.LastName, user.DateOfBirth, user.Email, passwordHash)
 }
 
 func GetUser(ctx context.Context, id *string, email *string) (types.User, error) {
@@ -32,23 +26,16 @@ func GetUser(ctx context.Context, id *string, email *string) (types.User, error)
 		return types.User{}, errors.New("At least one arguments must not be nil")
 	}
 
-	var err error
-	var query string
-	var user types.User
-
 	if id != nil {
-		query = `SELECT * FROM "users" WHERE "id" = $1`
-		user, err = selectOneReturning[types.User](ctx, query, *id)
+		return queryOneReturning[types.User](ctx, `SELECT * FROM "users" WHERE "id" = $1`, id)
 	} else {
-		query = `SELECT * FROM "users" WHERE "email" = $1`
-		user, err = selectOneReturning[types.User](ctx, query, *email)
+		return queryOneReturning[types.User](ctx, `SELECT * FROM "users" WHERE "email" = $1`, email)
 	}
-
-	return user, err
 }
 
-func DeleteUser(ctx context.Context, id *string) error {
-	return simpleDelete(ctx, id, "users", "id")
+func DeleteUser(ctx context.Context, id *string) (err error) {
+	_, err = queryOneReturning[types.User](ctx, `DELETE FROM "users" WHERE "id" = $1`, id)
+	return
 }
 
 func CreateRefreshToken(ctx context.Context, id *string, userID *string, expiresAt *time.Time) (types.RefreshToken, error) {
@@ -56,17 +43,16 @@ func CreateRefreshToken(ctx context.Context, id *string, userID *string, expires
 		return types.RefreshToken{}, errors.New("All arguments must be not nil")
 	}
 
-	refreshToken, err := insertReturning[types.RefreshToken](ctx, `
+	return queryOneReturning[types.RefreshToken](ctx, `
         INSERT INTO "refreshTokens" ("id", "userID", "expiresAt")
         VALUES ($1, $2, $3) 
         RETURNING *
-    `, *id, *userID, *expiresAt)
-
-	return refreshToken, err
+    `, id, userID, expiresAt)
 }
 
-func DeleteRefreshToken(ctx context.Context, userID *string) error {
-	return simpleDelete(ctx, userID, "refreshTokens", "userID")
+func DeleteRefreshToken(ctx context.Context, userID *string) (err error) {
+	_, err = queryOneReturning[types.RefreshToken](ctx, `DELETE FROM "refreshTokens" WHERE "userID" = $1`, userID)
+	return
 }
 
 func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error) {
@@ -74,22 +60,16 @@ func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error
 		return types.RefreshToken{}, errors.New("All arguments must be not nil")
 	}
 
-	refreshToken, err := selectOneReturning[types.RefreshToken](ctx, `SELECT * FROM "refreshTokens" WHERE "id" = $1`, *id)
-
-	return refreshToken, err
+	return queryOneReturning[types.RefreshToken](ctx, `SELECT * FROM "refreshTokens" WHERE "id" = $1`, id)
 }
 
 func UpdateUser(ctx context.Context, user *types.User, updateUser *types.UpdateUser, passwordHash *string) (types.User, error) {
 	if (updateUser == nil) == (passwordHash == nil) {
-		return types.User{}, errors.New("Eather updateUser or passwordHash should not be nil")
+		return types.User{}, errors.New("Either updateUser or passwordHash should not be nil")
 	}
 
-	var row pgx.Rows
-	var err error
-
 	if updateUser != nil {
-		query := `UPDATE "users" SET "username"=$1, "firstName"=$2, "lastName"=$3, "dateOfBirth"=$4 WHERE "id"=$5 RETURNING *`
-		row, err = pool.Query(ctx, query,
+		return queryOneReturning[types.User](ctx, `UPDATE "users" SET "username"=$1, "firstName"=$2, "lastName"=$3, "dateOfBirth"=$4 WHERE "id"=$5 RETURNING *`,
 			utils.UpdateSelector(updateUser.Username, &user.Username),
 			utils.UpdateSelector(updateUser.FirstName, &user.FirstName),
 			utils.UpdateSelector(updateUser.LastName, &user.LastName),
@@ -97,22 +77,6 @@ func UpdateUser(ctx context.Context, user *types.User, updateUser *types.UpdateU
 			user.ID,
 		)
 	} else {
-		query := `UPDATE "users" SET "passwordHash"=$1 WHERE "id"=$2 RETURNING *`
-		row, err = pool.Query(ctx, query, passwordHash, user.ID)
+		return queryOneReturning[types.User](ctx, `UPDATE "users" SET "passwordHash"=$1 WHERE "id"=$2 RETURNING *`, passwordHash, user.ID)
 	}
-
-	if err != nil {
-		return types.User{}, errors.Wrap(err, "error executing query")
-	}
-	defer row.Close()
-
-	busser, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return types.User{}, err
-	} else if err != nil {
-		return types.User{}, errors.Wrap(err, "error on collecting row")
-	}
-
-	return busser, nil
 }
