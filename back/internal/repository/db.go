@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/finkabaj/squid/back/internal/types"
+	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
@@ -264,4 +265,42 @@ func GetRefreshToken(ctx context.Context, id *string) (types.RefreshToken, error
 	}
 
 	return refreshToken, nil
+}
+
+func UpdateUser(ctx context.Context, user *types.User, updateUser *types.UpdateUser, passwordHash *string) (types.User, error) {
+	if (updateUser == nil) == (passwordHash == nil) {
+		return types.User{}, errors.New("Eather updateUser or passwordHash should not be nil")
+	}
+
+	var row pgx.Rows
+	var err error
+
+	if updateUser != nil {
+		query := `UPDATE "users" SET "username"=$1, "firstName"=$2, "lastName"=$3, "dateOfBirth"=$4 WHERE "id"=$5 RETURNING *`
+		row, err = pool.Query(ctx, query,
+			utils.UpdateSelector(updateUser.Username, &user.Username),
+			utils.UpdateSelector(updateUser.FirstName, &user.FirstName),
+			utils.UpdateSelector(updateUser.LastName, &user.LastName),
+			utils.UpdateSelector(updateUser.DateOfBirth, &user.DateOfBirth),
+			user.ID,
+		)
+	} else {
+		query := `UPDATE "users" SET "passwordHash"=$1 WHERE "id"=$2 RETURNING *`
+		row, err = pool.Query(ctx, query, passwordHash, user.ID)
+	}
+
+	if err != nil {
+		return types.User{}, errors.Wrap(err, "error executing query")
+	}
+	defer row.Close()
+
+	busser, err := pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[types.User])
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.User{}, err
+	} else if err != nil {
+		return types.User{}, errors.Wrap(err, "error on collecting row")
+	}
+
+	return busser, nil
 }

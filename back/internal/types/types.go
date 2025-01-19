@@ -33,6 +33,18 @@ type RegisterUser struct {
 	Password    string    `json:"password" validate:"required,min=8,max=50"`
 }
 
+type UpdateUser struct {
+	Username    *string    `json:"username,omitempty" validate:"omitempty,min=3,max=50"`
+	FirstName   *string    `json:"first_name,omitempty" validate:"omitempty,min=3,max=100"`
+	LastName    *string    `json:"last_name,omitempty" validate:"omitempty,min=3,max=100"`
+	DateOfBirth *time.Time `json:"date_of_birth,omitempty" validate:"omitempty,date_of_birth"`
+}
+
+type UpdatePassword struct {
+	OldPassword string `json:"old_password" validate:"required,min=8,max=50"`
+	Password    string `json:"password" validate:"required,min=8,max=50"`
+}
+
 type Login struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,min=8,max=100"`

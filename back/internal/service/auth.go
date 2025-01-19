@@ -229,3 +229,79 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 		RefreshToken: jwtPair["refreshToken"],
 	}, nil
 }
+
+func GetUserById(id *string) (types.User, error) {
+	if id == nil {
+		return types.User{}, utils.NewBadRequestError(errors.New("id is required"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	user, err := repository.GetUser(ctx, id, nil)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.User{}, utils.NewNotFoundError(errors.New("user not found"))
+	} else if err != nil {
+		return types.User{}, utils.NewInternalError(err)
+	}
+
+	return user, nil
+}
+
+func UpdateUser(user *types.User, updateUser *types.UpdateUser) (types.User, error) {
+	if user == nil || updateUser == nil {
+		return types.User{}, utils.NewBadRequestError(errors.New("user or updateUser is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	busser, err := repository.UpdateUser(ctx, user, updateUser, nil)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.User{}, utils.NewNotFoundError(errors.New("user not found"))
+	} else if err != nil {
+		return types.User{}, utils.NewInternalError(err)
+	}
+
+	return busser, nil
+}
+
+func UpdateUserPassword(user *types.User, updatePassword *types.UpdatePassword) (types.User, error) {
+	if user == nil || updatePassword == nil {
+		return types.User{}, utils.NewBadRequestError(errors.New("user or updatePassword is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if updatePassword.Password == updatePassword.OldPassword {
+		return types.User{}, utils.NewBadRequestError(errors.New("new password must be different from old password"))
+	}
+
+	if !utils.CheckPasswordHash(&updatePassword.OldPassword, &user.PasswordHash) {
+		return types.User{}, utils.AppError{
+			Type: utils.ErrorType{
+				Status:  http.StatusUnauthorized,
+				Message: "Invalid password",
+			},
+			OriginalError: nil,
+		}
+	}
+
+	passwordHash, err := utils.HashPassword(&updatePassword.Password)
+	if err != nil {
+		return types.User{}, utils.NewInternalError(err)
+	}
+
+	busser, err := repository.UpdateUser(ctx, user, nil, &passwordHash)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.User{}, utils.NewNotFoundError(errors.New("user not found"))
+	} else if err != nil {
+		return types.User{}, utils.NewInternalError(err)
+	}
+
+	return busser, nil
+}
