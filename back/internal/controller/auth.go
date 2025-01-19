@@ -1,8 +1,9 @@
 package controller
 
 import (
-	"github.com/pkg/errors"
 	"net/http"
+
+	"github.com/pkg/errors"
 
 	"github.com/finkabaj/squid/back/internal/service"
 	"github.com/finkabaj/squid/back/internal/utils"
@@ -23,7 +24,9 @@ func RegisterAuthRoutes(r *chi.Mux) {
 		r.With(middleware.ValidateJson[types.Login]()).Post("/login", login)
 		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", register)
 		r.With(middleware.ValidateJson[types.RefreshTokenRequest]()).Post("/refresh", refreshToken)
-		r.With(middleware.ValidateJWT).Post("/check", checkToken)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateUser]()).Patch("/user", updateUser)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdatePassword]()).Patch("/password", updatePassword)
+		r.With(middleware.ValidateJWT).Get("/user/{id}", getUser)
 	})
 
 	authControllerInitialized = true
@@ -69,6 +72,60 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func updateUser(w http.ResponseWriter, r *http.Request) {
+	updatedUser, ok := middleware.JsonFromContext(r.Context()).(types.UpdateUser)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get update user from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	busser, err := service.UpdateUser(&user, &updatedUser)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, busser); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal user"))
+	}
+}
+
+func getUser(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+
+	user, err := service.GetUserById(&userID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, user); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal user"))
+	}
+}
+
+func updatePassword(w http.ResponseWriter, r *http.Request) {
+	newPassword, ok := middleware.JsonFromContext(r.Context()).(types.UpdatePassword)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get update user from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	busser, err := service.UpdateUserPassword(&user, &newPassword)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, busser); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal user"))
+	}
+}
+
 func refreshToken(w http.ResponseWriter, r *http.Request) {
 	refreshToken, ok := middleware.JsonFromContext(r.Context()).(types.RefreshTokenRequest)
 
@@ -86,13 +143,5 @@ func refreshToken(w http.ResponseWriter, r *http.Request) {
 
 	if err = utils.MarshalBody(w, http.StatusOK, tokens); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
-	}
-}
-
-func checkToken(w http.ResponseWriter, r *http.Request) {
-	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{
-		Message: "Token is valid",
-	}); err != nil {
-		utils.HandleError(w, errors.New("Failed to marshal ok response"))
 	}
 }

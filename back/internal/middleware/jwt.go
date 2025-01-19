@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/finkabaj/squid/back/internal/config"
 	"github.com/finkabaj/squid/back/internal/repository"
+	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/pkg/errors"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"time"
 )
+
+type validateJWTCtxKey struct{}
 
 func ValidateJWT(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -61,13 +64,18 @@ func ValidateJWT(next http.Handler) http.Handler {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 
-		_, err = repository.GetUser(ctx, &userID, nil)
+		user, err := repository.GetUser(ctx, &userID, nil)
 
 		if err != nil {
 			utils.HandleError(w, utils.NewUnauthorizedError(err))
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		newCtx := context.WithValue(r.Context(), validateJWTCtxKey{}, user)
+		next.ServeHTTP(w, r.WithContext(newCtx))
 	})
+}
+
+func UserFromContext(ctx context.Context) types.User {
+	return ctx.Value(validateJWTCtxKey{}).(types.User)
 }
