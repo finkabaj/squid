@@ -8,7 +8,10 @@ import (
 
 	"github.com/finkabaj/squid/back/internal/config"
 	"github.com/finkabaj/squid/back/internal/controller"
+	myMiddleware "github.com/finkabaj/squid/back/internal/middleware"
+	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/go-chi/chi/v5/middleware"
+	ws "golang.org/x/net/websocket"
 
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"
@@ -56,7 +59,12 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	controller.RegisterAuthRoutes(r)
+	wsServer := websocket.NewServer()
+
+	controller.NewKanbanController(wsServer).RegisterKanbanRoutes(r)
+	controller.NewAuthController().RegisterAuthRoutes(r)
+
+	r.With(myMiddleware.ValidateJWT).Handle("/ws", ws.Handler(wsServer.HandleWs))
 
 	server := http.Server{
 		Addr:         fmt.Sprintf("%s:%d", config.Data.Host, config.Data.Port),
@@ -66,6 +74,8 @@ func main() {
 		IdleTimeout:  600 * time.Second,
 	}
 
-	server.ListenAndServe()
-	defer server.Close()
+	logger.Logger.Info().Msgf("Server starting on %s", server.Addr)
+	if err = server.ListenAndServe(); err != nil {
+		logger.Logger.Fatal().Err(err).Msg("Error starting server")
+	}
 }

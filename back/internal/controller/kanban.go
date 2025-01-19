@@ -2,6 +2,7 @@ package controller
 
 import (
 	"github.com/finkabaj/squid/back/internal/service"
+	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/pkg/errors"
 
 	"net/http"
@@ -15,20 +16,30 @@ import (
 
 var kanbanControllerInitialized = false
 
-func RegisterKanbanRoutes(r *chi.Mux) {
-	if !kanbanControllerInitialized {
+type KanbanController struct {
+	WSServer *websocket.WebsocketServer
+}
+
+func NewKanbanController(wsServer *websocket.WebsocketServer) *KanbanController {
+	return &KanbanController{
+		WSServer: wsServer,
+	}
+}
+
+func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
+	if kanbanControllerInitialized {
 		return
 	}
 
 	r.Route("/kanban", func(r chi.Router) {
-		r.With(middleware.ValidateJWT).With(middleware.ValidateJson[types.CreateProject]()).Post("/project", createProject)
-		r.With(middleware.ValidateJWT).Get("/project", getProject)
+		r.With(middleware.ValidateJWT).With(middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
+		r.With(middleware.ValidateJWT).Get("/project", c.getProject)
 	})
 
 	kanbanControllerInitialized = true
 }
 
-func createProject(w http.ResponseWriter, r *http.Request) {
+func (c *KanbanController) createProject(w http.ResponseWriter, r *http.Request) {
 	projectData, ok := middleware.JsonFromContext(r.Context()).(types.CreateProject)
 	if !ok {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get project info from context")))
@@ -45,10 +56,16 @@ func createProject(w http.ResponseWriter, r *http.Request) {
 
 	if err = utils.MarshalBody(w, http.StatusCreated, newProject); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal project"))
+		return
 	}
+
+	projectUsers := append(newProject.AdminIDs, newProject.MembersIDs...)
+	projectUsers = append(projectUsers, newProject.CreatorID)
+
+	c.WSServer.BroadcastToProject(newProject.ID, websocket.ProjectCreatedEvent, "project created", newProject, projectUsers)
 }
 
-func getProject(w http.ResponseWriter, r *http.Request) {
+func (c *KanbanController) getProject(w http.ResponseWriter, r *http.Request) {
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
 		utils.HandleError(w, err)

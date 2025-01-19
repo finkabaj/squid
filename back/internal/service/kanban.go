@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 )
 
+// FIX: validate that member cannot be admin and vise versa
 func CreateProject(userID *string, project *types.CreateProject) (types.Project, error) {
 	if userID == nil || project == nil {
 		return types.Project{}, utils.NewBadRequestError(errors.New("userID or project is nil"))

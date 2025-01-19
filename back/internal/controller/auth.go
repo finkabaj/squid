@@ -15,24 +15,31 @@ import (
 
 var authControllerInitialized bool
 
-func RegisterAuthRoutes(r *chi.Mux) {
+type AuthController struct {
+}
+
+func NewAuthController() *AuthController {
+	return &AuthController{}
+}
+
+func (c *AuthController) RegisterAuthRoutes(r *chi.Mux) {
 	if authControllerInitialized {
 		return
 	}
 
 	r.Route("/auth", func(r chi.Router) {
-		r.With(middleware.ValidateJson[types.Login]()).Post("/login", login)
-		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", register)
-		r.With(middleware.ValidateJson[types.RefreshTokenRequest]()).Post("/refresh", refreshToken)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateUser]()).Patch("/user", updateUser)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdatePassword]()).Patch("/password", updatePassword)
-		r.With(middleware.ValidateJWT).Get("/user/{id}", getUser)
+		r.With(middleware.ValidateJson[types.Login]()).Post("/login", c.login)
+		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", c.register)
+		r.With(middleware.ValidateJson[types.RefreshTokenRequest]()).Post("/refresh", c.refreshToken)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateUser]()).Patch("/user", c.updateUser)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdatePassword]()).Patch("/password", c.updatePassword)
+		r.With(middleware.ValidateJWT).Get("/user/{id}", c.getUser)
 	})
 
 	authControllerInitialized = true
 }
 
-func register(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) register(w http.ResponseWriter, r *http.Request) {
 	register, ok := middleware.JsonFromContext(r.Context()).(types.RegisterUser)
 
 	if !ok {
@@ -52,7 +59,7 @@ func register(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func login(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) login(w http.ResponseWriter, r *http.Request) {
 	login, ok := middleware.JsonFromContext(r.Context()).(types.Login)
 
 	if !ok {
@@ -72,7 +79,7 @@ func login(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func updateUser(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) updateUser(w http.ResponseWriter, r *http.Request) {
 	updatedUser, ok := middleware.JsonFromContext(r.Context()).(types.UpdateUser)
 	if !ok {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get update user from context")))
@@ -92,7 +99,7 @@ func updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getUser(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) getUser(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 
 	user, err := service.GetUserById(&userID)
@@ -106,7 +113,7 @@ func getUser(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func updatePassword(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) updatePassword(w http.ResponseWriter, r *http.Request) {
 	newPassword, ok := middleware.JsonFromContext(r.Context()).(types.UpdatePassword)
 	if !ok {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get update user from context")))
@@ -126,7 +133,7 @@ func updatePassword(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func refreshToken(w http.ResponseWriter, r *http.Request) {
+func (c *AuthController) refreshToken(w http.ResponseWriter, r *http.Request) {
 	refreshToken, ok := middleware.JsonFromContext(r.Context()).(types.RefreshTokenRequest)
 
 	if !ok {
