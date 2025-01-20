@@ -2,6 +2,7 @@ import {RouterProvider} from "react-router";
 import appRouter from "./navigation/app.router.tsx";
 import {urls} from "./navigation/app.urls.ts";
 import {useEffect} from "react";
+import AuthProvider from "./screens/Auth/components/AuthProvider";
 
 const App = () => {
     useEffect(() => {
@@ -11,7 +12,10 @@ const App = () => {
     }, [])
 
     return (
-        <RouterProvider router={appRouter}/>
+        <AuthProvider>
+            <RouterProvider router={appRouter}/>
+        </AuthProvider>
+
     );
 };
 

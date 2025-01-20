@@ -1,0 +1,21 @@
+.input-wrapper {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+.input{
+    height: 65px;
+    width: 541px;
+    padding-left: 15px;
+    border-radius: 20px;
+    background-color: var(--dark-gray);
+    border: none;
+    color: var(--navy-blue)
+}
+input:focus{
+    outline: none;
+}
+.input::placeholder{
+    color: #2F3D53;
+}

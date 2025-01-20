@@ -2,7 +2,7 @@ import {IAuthResponse} from './auth.types.ts'
 import {atom} from 'recoil'
 import {getCookie} from "../../utils/getCoockie.ts";
 
-const AuthAtom = atom<Omit<IAuthResponse, 'user'>>({
+const AuthAtom = atom<Omit<IAuthResponse,'user'>>({
     key: 'auth',
     default: {
         token_pair: {
