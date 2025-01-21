@@ -15,38 +15,48 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 	}
 
 	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
-		newProject, err := queryReturningTx[types.Project](ctx, tx, `
-        INSERT INTO "projects" ("id", "creatorID", "name", "description")
-        VALUES ($1, $2, $3, $4)
-        RETURNING *
-    `, id, creatorID, project.Name, project.Description)
+		row := tx.QueryRow(ctx, `
+        	INSERT INTO "projects" ("id", "creatorID", "name", "description")
+        	VALUES ($1, $2, $3, $4)
+        	RETURNING *
+    	`, id, creatorID, project.Name, project.Description)
 
+		var newProject types.Project
+		err := row.Scan(&newProject.ID, &newProject.CreatorID, &newProject.Name, &newProject.Description, &newProject.CreatedAt, &newProject.UpdatedAt)
 		if err != nil {
 			return types.Project{}, err
 		}
 
-		adminRows := make([][]interface{}, len(project.AdminIDs))
+		if len(project.AdminIDs) > 0 {
+			adminRows := make([][]interface{}, len(project.AdminIDs))
 
-		for i, userID := range project.AdminIDs {
-			adminRows[i] = []interface{}{
-				newProject.ID, userID,
+			for i, userID := range project.AdminIDs {
+				adminRows[i] = []interface{}{
+					newProject.ID, userID,
+				}
 			}
-		}
 
-		if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
-			return types.Project{}, err
-		}
-
-		memberRows := make([][]interface{}, len(project.MembersIDs))
-
-		for i, userID := range project.MembersIDs {
-			memberRows[i] = []interface{}{
-				newProject.ID, userID,
+			if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
+				return types.Project{}, err
 			}
+
+			newProject.AdminIDs = project.AdminIDs
 		}
 
-		if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
-			return types.Project{}, err
+		if len(project.MembersIDs) > 0 {
+			memberRows := make([][]interface{}, len(project.MembersIDs))
+
+			for i, userID := range project.MembersIDs {
+				memberRows[i] = []interface{}{
+					newProject.ID, userID,
+				}
+			}
+
+			if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
+				return types.Project{}, err
+			}
+
+			newProject.MembersIDs = project.MembersIDs
 		}
 
 		return newProject, err

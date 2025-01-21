@@ -13,14 +13,40 @@ import (
 	"github.com/pkg/errors"
 )
 
-// FIX: validate that member cannot be admin and vise versa
 func CreateProject(userID *string, project *types.CreateProject) (types.Project, error) {
 	if userID == nil || project == nil {
 		return types.Project{}, utils.NewBadRequestError(errors.New("userID or project is nil"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+
+	for _, adminID := range project.AdminIDs {
+		if adminID == *userID || utils.Have(func(_ int, memberID string) bool {
+			return memberID == adminID
+		}, project.MembersIDs) {
+			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+		}
+		_, err := repository.GetUser(ctx, &adminID, nil)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", adminID)))
+		} else if err != nil {
+			return types.Project{}, utils.NewInternalError(err)
+		}
+	}
+
+	for _, memberID := range project.MembersIDs {
+		if memberID == *userID {
+			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+		}
+
+		_, err := repository.GetUser(ctx, &memberID, nil)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", memberID)))
+		} else {
+			return types.Project{}, utils.NewInternalError(err)
+		}
+	}
 
 	id := uuid.New().String()
 
@@ -29,7 +55,7 @@ func CreateProject(userID *string, project *types.CreateProject) (types.Project,
 		return types.Project{}, utils.NewInternalError(err)
 	}
 
-	return newProject, errors.New("not implemented")
+	return newProject, nil
 }
 
 func GetProject(userID *string, projectID *string) (types.Project, error) {

@@ -17,10 +17,10 @@ import (
 var kanbanControllerInitialized = false
 
 type KanbanController struct {
-	WSServer *websocket.WebsocketServer
+	WSServer *websocket.Server
 }
 
-func NewKanbanController(wsServer *websocket.WebsocketServer) *KanbanController {
+func NewKanbanController(wsServer *websocket.Server) *KanbanController {
 	return &KanbanController{
 		WSServer: wsServer,
 	}
@@ -32,7 +32,7 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 	}
 
 	r.Route("/kanban", func(r chi.Router) {
-		r.With(middleware.ValidateJWT).With(middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
 		r.With(middleware.ValidateJWT).Get("/project", c.getProject)
 	})
 

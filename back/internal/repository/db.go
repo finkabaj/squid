@@ -178,20 +178,20 @@ func setup() (err error) {
 		    "updatedAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
-		CREATE TABLE "projectAdmins" (
+		CREATE TABLE IF NOT EXISTS "projectAdmins" (
     		"projectID" VARCHAR(255) REFERENCES "projects"("id") ON DELETE CASCADE,
     		"userID" VARCHAR(255) REFERENCES "users"("id") ON DELETE CASCADE,
     		PRIMARY KEY ("projectID", "userID")
 		);
 
-		CREATE TABLE "projectMembers" (
+		CREATE TABLE IF NOT EXISTS "projectMembers" (
 		    "projectID" VARCHAR(255) REFERENCES "projects"("id") ON DELETE CASCADE,
 		    "userID" VARCHAR(255) REFERENCES "users"("id") ON DELETE CASCADE,
 		    PRIMARY KEY ("projectID", "userID")
 		);
 
-		CREATE INDEX idx_project_admins_user ON "projectAdmins"("userID");
-		CREATE INDEX idx_project_members_user ON "projectMembers"("userID");
+		CREATE INDEX IF NOT EXISTS idx_project_admins_user ON "projectAdmins"("userID");
+		CREATE INDEX IF NOT EXISTS idx_project_members_user ON "projectMembers"("userID");
 
 		DROP TRIGGER IF EXISTS update_projects_updated_at on "public"."projects";
         CREATE TRIGGER update_projects_updated_at
@@ -204,7 +204,11 @@ func setup() (err error) {
 	}
 
 	if _, err = transaction.Exec(ctx, `
-		CREATE TYPE IF NOT EXISTS "specialTags" AS ENUM ('TODO', 'IN_PROGRESS', 'TESTING', 'COMPLETED');
+		DO $$ BEGIN
+			CREATE TYPE "specialTags" AS ENUM ('TODO', 'IN_PROGRESS', 'TESTING', 'COMPLETED'); 
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
 
 		CREATE TABLE IF NOT EXISTS "kanbanColumnLabels" (
 		    "id" VARCHAR(255) PRIMARY KEY,
@@ -214,7 +218,7 @@ func setup() (err error) {
 		    "color" VARCHAR(255) NOT NULL
 		);
 
-		CREATE INDEX idx_kanban_column_labels_project ON "kanbanColumnLabels"("projectID");
+		CREATE INDEX IF NOT EXISTS idx_kanban_column_labels_project ON "kanbanColumnLabels"("projectID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating kanbanColumnLabels table")
 	}
@@ -228,13 +232,30 @@ func setup() (err error) {
 		    "labelID" VARCHAR(255) REFERENCES "kanbanColumnLabels"("id")
 		);
 
-		CREATE INDEX idx_kanban_columns_project ON "kanbanColumns"("projectID");
+		CREATE INDEX IF NOT EXISTS idx_kanban_columns_project ON "kanbanColumns"("projectID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating kanbanColumns table")
 	}
 
 	if _, err = transaction.Exec(ctx, `
-		CREATE TYPE IF NOT EXISTS "priorities" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
+		CREATE TABLE IF NOT EXISTS "kanbanRowLabels" (
+		    "id" VARCHAR(255) PRIMARY KEY,
+			"projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
+		    "name" VARCHAR(50) NOT NULL,
+			"color" VARCHAR(255) NOT NULL
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_kanban_row_labels_project ON "kanbanRowLabels"("projectID");
+	`); err != nil {
+		return errors.Wrap(err, "error creating kanbanRowLabels table")
+	}
+
+	if _, err = transaction.Exec(ctx, `
+		DO $$ BEGIN
+			CREATE TYPE "priorities" AS ENUM ('LOW', 'MEDIUM', 'HIGH');
+		EXCEPTION
+			WHEN duplicate_object THEN null;
+		END $$;
 
 		CREATE TABLE IF NOT EXISTS "kanbanRows" (
 		    "id" VARCHAR(255) PRIMARY KEY,
@@ -250,15 +271,15 @@ func setup() (err error) {
 			"dueDate" TIMESTAMP
 		);
 
-		CREATE INDEX idx_kanban_rows_column ON "kanbanRows"("columnID");
+		CREATE INDEX IF NOT EXISTS idx_kanban_rows_column ON "kanbanRows"("columnID");
 
-		CREATE TABLE "kanbanRowAssignees" (
+		CREATE TABLE IF NOT EXISTS "kanbanRowAssignees" (
 		    "rowID" VARCHAR(255) REFERENCES "kanbanRows"("id") ON DELETE CASCADE,
 		    "userID" VARCHAR(255) REFERENCES "users"("id") ON DELETE CASCADE,
 		    PRIMARY KEY ("rowID", "userID")
 		);
 
-		CREATE INDEX idx_kanban_row_assignees_user ON "kanbanRowAssignees"("userID");
+		CREATE INDEX IF NOT EXISTS idx_kanban_row_assignees_user ON "kanbanRowAssignees"("userID");
 
 		DROP TRIGGER IF EXISTS update_kanban_rows_updated_at on "public"."kanbanRows";
         CREATE TRIGGER update_kanban_rows_updated_at
@@ -270,19 +291,6 @@ func setup() (err error) {
 	}
 
 	if _, err = transaction.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS "kanbanRowLabels" (
-		    "id" VARCHAR(255) PRIMARY KEY,
-			"projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
-		    "name" VARCHAR(50) NOT NULL,
-			"color" VARCHAR(255) NOT NULL
-		);
-
-		CREATE INDEX idx_kanban_row_labels_project ON "kanbanRowLabels"("projectID");
-	`); err != nil {
-		return errors.Wrap(err, "error creating kanbanRowLabels table")
-	}
-
-	if _, err = transaction.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS "historyPoints" (
 		    "id" VARCHAR(255) PRIMARY KEY,
 			"rowID" VARCHAR(255) NOT NULL REFERENCES "kanbanRows"("id") ON DELETE CASCADE,
@@ -291,7 +299,7 @@ func setup() (err error) {
 		    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 
-		CREATE INDEX idx_history_points_row ON "historyPoints"("rowID");
+		CREATE INDEX IF NOT EXISTS idx_history_points_row ON "historyPoints"("rowID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating historyPoints table")
 	}
@@ -301,8 +309,6 @@ func setup() (err error) {
 		    "id" VARCHAR(255) PRIMARY KEY,
 		    "rowID" VARCHAR(255) NOT NULL REFERENCES "kanbanRows"("id") ON DELETE CASCADE
 		);
-
-		CREATE INDEX idx_points_checklist ON "points"("checkListID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating checkLists table")
 	}
@@ -317,6 +323,8 @@ func setup() (err error) {
 		    "completedAt" TIMESTAMP,
 		    "completedBy" VARCHAR(255) REFERENCES "users"("id")
 		);
+
+		CREATE INDEX IF NOT EXISTS idx_points_checklist ON "points"("checkListID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating points table")
 	}
@@ -340,7 +348,7 @@ func setup() (err error) {
 		    "createdAt" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
 		
-		CREATE INDEX idx_comments_user ON "comments"("userID");
+		CREATE INDEX IF NOT EXISTS idx_comments_user ON "comments"("userID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating comments table")
 	}
