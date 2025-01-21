@@ -23,22 +23,22 @@ type Event struct {
 	Payload interface{} `json:"payload"`
 }
 
-type WebsocketServer struct {
+type Server struct {
 	sync.RWMutex
 	// userID to ws conn
 	Conns map[string][]*websocket.Conn
 }
 
-func NewServer() *WebsocketServer {
-	return &WebsocketServer{
+func NewServer() *Server {
+	return &Server{
 		Conns: make(map[string][]*websocket.Conn),
 	}
 }
 
-func (s *WebsocketServer) HandleWs(ws *websocket.Conn) {
+func (s *Server) HandleWs(ws *websocket.Conn) {
 	user, ok := ws.Request().Context().Value("user").(*types.User)
 	if !ok || user == nil {
-		logger.Logger.Error().Msg("unathorized ws connection attemp")
+		logger.Logger.Error().Msg("unauthorized ws connection attempt")
 		ws.Close()
 		return
 	}
@@ -55,7 +55,7 @@ func (s *WebsocketServer) HandleWs(ws *websocket.Conn) {
 	s.readLoop(ws, user.ID)
 }
 
-func (s *WebsocketServer) readLoop(ws *websocket.Conn, userID string) {
+func (s *Server) readLoop(ws *websocket.Conn, userID string) {
 	defer s.removeConnection(ws, userID)
 
 	for {
@@ -76,7 +76,7 @@ func (s *WebsocketServer) readLoop(ws *websocket.Conn, userID string) {
 	}
 }
 
-func (s *WebsocketServer) handlePing(ws *websocket.Conn) {
+func (s *Server) handlePing(ws *websocket.Conn) {
 	evt := Event{
 		Type:    PongEvent,
 		Message: "pong",
@@ -89,7 +89,7 @@ func (s *WebsocketServer) handlePing(ws *websocket.Conn) {
 	}
 }
 
-func (s *WebsocketServer) handleUndefined(ws *websocket.Conn) {
+func (s *Server) handleUndefined(ws *websocket.Conn) {
 	evt := Event{
 		Type:    UndefinedEvent,
 		Message: "undefined event",
@@ -102,7 +102,7 @@ func (s *WebsocketServer) handleUndefined(ws *websocket.Conn) {
 	}
 }
 
-func (s *WebsocketServer) removeConnection(ws *websocket.Conn, userID string) {
+func (s *Server) removeConnection(ws *websocket.Conn, userID string) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -121,7 +121,7 @@ func (s *WebsocketServer) removeConnection(ws *websocket.Conn, userID string) {
 	ws.Close()
 }
 
-func (s *WebsocketServer) BroadcastToUser(userID string, eventType EventType, msg string, payload interface{}) {
+func (s *Server) BroadcastToUser(userID string, eventType EventType, msg string, payload interface{}) {
 	evt := Event{
 		Type:    eventType,
 		Message: msg,
@@ -140,7 +140,7 @@ func (s *WebsocketServer) BroadcastToUser(userID string, eventType EventType, ms
 	}
 }
 
-func (s *WebsocketServer) BroadcastToProject(projectID string, eventType EventType, msg string, payload interface{}, authorizedUsers []string) {
+func (s *Server) BroadcastToProject(projectID string, eventType EventType, msg string, payload interface{}, authorizedUsers []string) {
 	evt := Event{
 		Type:    eventType,
 		Message: msg,
