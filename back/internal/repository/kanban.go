@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/jackc/pgx/v5"
@@ -69,13 +68,17 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 	}
 
 	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
-		project, err := queryOneReturning[types.Project](ctx, `SELECT * FROM "projects" WHERE id = $1`, id)
+		row := tx.QueryRow(ctx, `SELECT * FROM "projects" WHERE id = $1`, id)
 
-		if err != nil {
+		var project types.Project
+		err := row.Scan(&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.CreatedAt, &project.UpdatedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
 			return types.Project{}, err
+		} else if err != nil {
+			return types.Project{}, errors.Wrap(err, "error getting project")
 		}
 
-		admins, err := queryReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE projectID = $1`, id)
+		admins, err := queryReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE "projectID" = $1`, id)
 
 		if err != nil {
 			return types.Project{}, err
@@ -85,7 +88,7 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 			return admin.UserID
 		}, admins)
 
-		members, err := queryReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE projectID = $1`, id)
+		members, err := queryReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE "projectID" = $1`, id)
 
 		if err != nil {
 			return types.Project{}, err

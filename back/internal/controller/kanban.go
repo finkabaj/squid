@@ -5,13 +5,11 @@ import (
 	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/pkg/errors"
 
-	"net/http"
-	"net/url"
-
 	"github.com/finkabaj/squid/back/internal/middleware"
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/go-chi/chi/v5"
+	"net/http"
 )
 
 var kanbanControllerInitialized = false
@@ -33,7 +31,7 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 
 	r.Route("/kanban", func(r chi.Router) {
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
-		r.With(middleware.ValidateJWT).Get("/project", c.getProject)
+		r.With(middleware.ValidateJWT).Get("/project/{id}", c.getProject)
 	})
 
 	kanbanControllerInitialized = true
@@ -66,13 +64,7 @@ func (c *KanbanController) createProject(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *KanbanController) getProject(w http.ResponseWriter, r *http.Request) {
-	values, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil {
-		utils.HandleError(w, err)
-		return
-	}
-
-	id := values.Get("id")
+	id := chi.URLParam(r, "id")
 	if id == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
 		return
