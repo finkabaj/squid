@@ -1,11 +1,13 @@
 package websocket
 
 import (
+	"net/http"
 	"sync"
 
+	"github.com/finkabaj/squid/back/internal/middleware"
+
 	"github.com/finkabaj/squid/back/internal/logger"
-	"github.com/finkabaj/squid/back/internal/types"
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
 
 type EventType string
@@ -26,22 +28,31 @@ type Event struct {
 type Server struct {
 	sync.RWMutex
 	// userID to ws conn
-	Conns map[string][]*websocket.Conn
+	Conns    map[string][]*websocket.Conn
+	upgrader websocket.Upgrader
 }
 
 func NewServer() *Server {
 	return &Server{
 		Conns: make(map[string][]*websocket.Conn),
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
+			CheckOrigin: func(r *http.Request) bool {
+				// TODO: change when ready for production
+				return true
+			},
+		},
 	}
 }
 
-func (s *Server) HandleWs(ws *websocket.Conn) {
-	user, ok := ws.Request().Context().Value("user").(*types.User)
-	if !ok || user == nil {
-		logger.Logger.Error().Msg("unauthorized ws connection attempt")
-		ws.Close()
-		return
+func (s *Server) HandleWs(w http.ResponseWriter, r *http.Request) {
+	ws, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Logger.Error().Err(err).Msg("failed to upgrade connection")
 	}
+
+	user := middleware.UserFromContext(r.Context())
 
 	logger.Logger.Debug().Msgf("new incoming connection from user: %s with client: %s", user.ID, ws.RemoteAddr())
 
@@ -60,9 +71,11 @@ func (s *Server) readLoop(ws *websocket.Conn, userID string) {
 
 	for {
 		var evt Event
-		err := websocket.JSON.Receive(ws, &evt)
+		err := ws.ReadJSON(&evt)
 		if err != nil {
-			logger.Logger.Error().Err(err).Msg("error reading event")
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				logger.Logger.Error().Err(err).Msg("error reading event")
+			}
 			return
 		}
 
@@ -83,7 +96,7 @@ func (s *Server) handlePing(ws *websocket.Conn) {
 		Payload: nil,
 	}
 
-	err := websocket.JSON.Send(ws, evt)
+	err := ws.WriteJSON(evt)
 	if err != nil {
 		logger.Logger.Error().Err(err).Msg("error sending pong")
 	}
@@ -96,7 +109,7 @@ func (s *Server) handleUndefined(ws *websocket.Conn) {
 		Payload: nil,
 	}
 
-	err := websocket.JSON.Send(ws, evt)
+	err := ws.WriteJSON(evt)
 	if err != nil {
 		logger.Logger.Error().Err(err).Msg("error sending undefined")
 	}
@@ -133,7 +146,7 @@ func (s *Server) BroadcastToUser(userID string, eventType EventType, msg string,
 	s.RUnlock()
 
 	for _, conn := range connections {
-		if err := websocket.JSON.Send(conn, evt); err != nil {
+		if err := conn.WriteJSON(evt); err != nil {
 			logger.Logger.Error().Err(err).Msgf("error sending message to user %s", userID)
 			s.removeConnection(conn, userID)
 		}
@@ -156,7 +169,7 @@ func (s *Server) BroadcastToProject(projectID string, eventType EventType, msg s
 			continue
 		}
 		for _, conn := range userConnections {
-			if err := websocket.JSON.Send(conn, evt); err != nil {
+			if err := conn.WriteJSON(evt); err != nil {
 				logger.Logger.Error().Err(err).Msgf("error sending message to user %s for project %s", userID, projectID)
 				s.removeConnection(conn, userID)
 			}

@@ -11,7 +11,6 @@ import (
 	myMiddleware "github.com/finkabaj/squid/back/internal/middleware"
 	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/go-chi/chi/v5/middleware"
-	ws "golang.org/x/net/websocket"
 
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"
@@ -64,7 +63,7 @@ func main() {
 	controller.NewKanbanController(wsServer).RegisterKanbanRoutes(r)
 	controller.NewAuthController().RegisterAuthRoutes(r)
 
-	r.With(myMiddleware.ValidateJWT).Handle("/ws", ws.Handler(wsServer.HandleWs))
+	r.With(myMiddleware.ValidateJWT).HandleFunc("/ws", wsServer.HandleWs)
 
 	server := http.Server{
 		Addr:         fmt.Sprintf("%s:%d", config.Data.Host, config.Data.Port),

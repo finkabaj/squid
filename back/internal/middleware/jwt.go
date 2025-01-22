@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-type validateJWTCtxKey struct{}
+type ValidateJWTCtxKey struct{}
 
 func ValidateJWT(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +72,11 @@ func ValidateJWT(next http.Handler) http.Handler {
 			return
 		}
 
-		newCtx := context.WithValue(r.Context(), validateJWTCtxKey{}, user)
+		newCtx := context.WithValue(r.Context(), ValidateJWTCtxKey{}, user)
 		next.ServeHTTP(w, r.WithContext(newCtx))
 	})
 }
 
 func UserFromContext(ctx context.Context) types.User {
-	return ctx.Value(validateJWTCtxKey{}).(types.User)
+	return ctx.Value(ValidateJWTCtxKey{}).(types.User)
 }
