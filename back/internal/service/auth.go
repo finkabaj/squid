@@ -111,7 +111,7 @@ func Login(login *types.Login) (types.AuthUser, error) {
 
 	err = repository.DeleteRefreshToken(ctx, &user.ID)
 
-	if err != nil && err.Error() != "no rows were deleted" {
+	if err != nil && !errors.Is(errors.Cause(err), pgx.ErrNoRows) {
 		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 

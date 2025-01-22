@@ -31,10 +31,10 @@ func MarshalBody(w http.ResponseWriter, status int, v any) (err error) {
 }
 
 // UnmarshalBody Reads json body to v. Body is ReadCloser
-func UnmarshalBody(body io.ReadCloser, v any) (err error) {
-	err = json.NewDecoder(body).Decode(v)
-
-	return
+func UnmarshalBody(body io.ReadCloser, v any) error {
+	decoder := json.NewDecoder(body)
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(v)
 }
 
 func ValidateSliceOrStruct(w http.ResponseWriter, validate *validator.Validate, v any) (haveError bool) {
@@ -142,4 +142,23 @@ func UpdateSelector[T any](update *T, current *T) *T {
 	}
 
 	return current
+}
+func Map[T any, F any](mapper func(int, T) F, values []T) []F {
+	result := make([]F, len(values))
+
+	for i, v := range values {
+		result[i] = mapper(i, v)
+	}
+
+	return result
+}
+
+func Have[T any](haveF func(int, T) bool, data []T) bool {
+	for i, v := range data {
+		if haveF(i, v) {
+			return true
+		}
+	}
+
+	return false
 }
