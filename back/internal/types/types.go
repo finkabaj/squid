@@ -90,10 +90,10 @@ type CreateProject struct {
 }
 
 type UpdateProject struct {
-	AdminIDs    []string `json:"admin_ids,omitempty" validate:"omitempty,dive,uuid"`
-	MembersIDs  []string `json:"members_ids,omitempty" validate:"omitempty,dive,uuid"`
-	Name        string   `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Description string   `json:"description,omitempty" validate:"omitempty,max=500"`
+	AdminIDs    *[]string `json:"admin_ids,omitempty" validate:"omitempty,dive,uuid"`
+	MembersIDs  *[]string `json:"members_ids,omitempty" validate:"omitempty,dive,uuid"`
+	Name        *string   `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Description *string   `json:"description,omitempty" validate:"omitempty,max=500"`
 }
 
 type KanbanColumn struct {

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/jackc/pgx/v5"
@@ -97,6 +98,77 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 		project.MembersIDs = utils.Map(func(i int, member types.ProjectMember) string {
 			return member.UserID
 		}, members)
+
+		return project, err
+	})
+}
+
+func UpdateProject(ctx context.Context, id *string, project *types.Project, updateProject *types.UpdateProject) (types.Project, error) {
+	if id == nil || updateProject == nil {
+		return types.Project{}, errors.New("All arguments must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
+		row := tx.QueryRow(ctx, `
+            UPDATE "projects"
+            SET "name"=$1, "description"=$2
+            WHERE "id"=$3
+            RETURNING *
+            `, utils.UpdateSelector(updateProject.Name, &project.Name), utils.UpdateSelector(updateProject.Description, &project.Description), id)
+
+		var project types.Project
+		err := row.Scan(&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.CreatedAt, &project.UpdatedAt)
+		if err != nil {
+			return types.Project{}, err
+		}
+
+		if updateProject.AdminIDs != nil {
+			_, err = queryOneReturning[any](ctx, `DELETE FROM "projectAdmins" WHERE "projectID"=$1`, id)
+
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return types.Project{}, err
+			}
+
+			if len(*updateProject.AdminIDs) > 0 {
+				adminRows := make([][]interface{}, len(*updateProject.AdminIDs))
+
+				for i, userID := range *updateProject.AdminIDs {
+					adminRows[i] = []interface{}{
+						project.ID, userID,
+					}
+				}
+
+				if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
+					return types.Project{}, err
+				}
+
+				project.AdminIDs = *updateProject.AdminIDs
+			}
+		}
+
+		if updateProject.MembersIDs != nil {
+			_, err = queryOneReturning[any](ctx, `DELETE FROM "projectMembers" WHERE "projectID"=$1`, id)
+
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return types.Project{}, err
+			}
+
+			if len(*updateProject.MembersIDs) > 0 {
+				memberRows := make([][]interface{}, len(*updateProject.MembersIDs))
+
+				for i, userID := range *updateProject.MembersIDs {
+					memberRows[i] = []interface{}{
+						project.ID, userID,
+					}
+				}
+
+				if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
+					return types.Project{}, err
+				}
+
+				project.MembersIDs = *updateProject.MembersIDs
+			}
+		}
 
 		return project, err
 	})

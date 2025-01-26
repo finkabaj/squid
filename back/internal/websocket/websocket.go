@@ -17,6 +17,7 @@ const (
 	PongEvent           EventType = "PONG"
 	UndefinedEvent      EventType = "UNDEFINED"
 	ProjectCreatedEvent EventType = "PROJECT_CREATED"
+	ProjectUpdatedEvent EventType = "PROJECT_UPDATED"
 )
 
 type Event struct {
