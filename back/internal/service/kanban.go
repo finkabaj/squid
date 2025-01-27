@@ -144,3 +144,31 @@ func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProj
 
 	return updatedProject, nil
 }
+
+func DeleteProject(user *types.User, projectID *string) (types.Project, error) {
+	if user == nil || projectID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("user or projectID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != user.ID {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can delete project"))
+	}
+
+	err = repository.DeleteProject(ctx, &user.ID, projectID)
+
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}

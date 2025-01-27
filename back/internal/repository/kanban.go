@@ -173,3 +173,25 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 		return project, err
 	})
 }
+
+func DeleteProject(ctx context.Context, userID *string, projectID *string) error {
+	if userID == nil || projectID == nil {
+		return errors.New("Id must not be nil")
+	}
+
+	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
+		_, err := tx.Exec(ctx, `
+    		DELETE FROM "projectMembers" WHERE "projectID" = $1;
+    		DELETE FROM "projectAdmins" WHERE "projectID" = $1;
+    		DELETE FROM "projects" WHERE "id" = $1;
+		`, projectID)
+
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+
+		return nil, nil
+	})
+
+	return err
+}

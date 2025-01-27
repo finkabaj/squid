@@ -34,6 +34,7 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
 		r.With(middleware.ValidateJWT).Get("/project/{id}", c.getProject)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{id}", c.updateProject)
+		r.With(middleware.ValidateJWT).Delete("/project/{id}", c.deleteProject)
 	})
 
 	kanbanControllerInitialized = true
@@ -116,4 +117,30 @@ func (c *KanbanController) updateProject(w http.ResponseWriter, r *http.Request)
 	projectUsers = append(projectUsers, project.CreatorID)
 
 	c.WSServer.BroadcastToProject(project.ID, websocket.ProjectUpdatedEvent, "project updated", project, projectUsers)
+}
+
+func (c *KanbanController) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeleteProject(&user, &id)
+
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "project deleted succesfully"}); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal OkResponse"))
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.ProjectDeletedEvent, "project deleted", nil, projectUsers)
 }
