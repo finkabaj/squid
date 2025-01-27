@@ -5,11 +5,12 @@ import (
 	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/pkg/errors"
 
+	"net/http"
+
 	"github.com/finkabaj/squid/back/internal/middleware"
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/go-chi/chi/v5"
-	"net/http"
 )
 
 var kanbanControllerInitialized = false
@@ -32,6 +33,8 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 	r.Route("/kanban", func(r chi.Router) {
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
 		r.With(middleware.ValidateJWT).Get("/project/{id}", c.getProject)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{id}", c.updateProject)
+		r.With(middleware.ValidateJWT).Delete("/project/{id}", c.deleteProject)
 	})
 
 	kanbanControllerInitialized = true
@@ -82,4 +85,62 @@ func (c *KanbanController) getProject(w http.ResponseWriter, r *http.Request) {
 	if err = utils.MarshalBody(w, http.StatusOK, project); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal project"))
 	}
+}
+
+func (c *KanbanController) updateProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	updateProject, ok := middleware.JsonFromContext(r.Context()).(types.UpdateProject)
+
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("error getting updateProject from contex")))
+	}
+
+	project, err := service.UpdateProject(&id, &user, &updateProject)
+
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, project); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal project"))
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.ProjectUpdatedEvent, "project updated", project, projectUsers)
+}
+
+func (c *KanbanController) deleteProject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeleteProject(&user, &id)
+
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "project deleted succesfully"}); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal OkResponse"))
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.ProjectDeletedEvent, "project deleted", nil, projectUsers)
 }
