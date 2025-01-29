@@ -123,7 +123,7 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 		}
 
 		if updateProject.AdminIDs != nil {
-			_, err = queryOneReturning[any](ctx, `DELETE FROM "projectAdmins" WHERE "projectID"=$1`, id)
+			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectAdmins" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return types.Project{}, err
@@ -147,7 +147,7 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 		}
 
 		if updateProject.MembersIDs != nil {
-			_, err = queryOneReturning[any](ctx, `DELETE FROM "projectMembers" WHERE "projectID"=$1`, id)
+			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectMembers" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return types.Project{}, err
@@ -179,19 +179,242 @@ func DeleteProject(ctx context.Context, userID *string, projectID *string) error
 		return errors.New("Id must not be nil")
 	}
 
-	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
-		_, err := tx.Exec(ctx, `
+	_, err := queryReturning[any](ctx, `
     		DELETE FROM "projectMembers" WHERE "projectID" = $1;
     		DELETE FROM "projectAdmins" WHERE "projectID" = $1;
     		DELETE FROM "projects" WHERE "id" = $1;
 		`, projectID)
 
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return nil, err
+	return err
+}
+
+// TODO: reorder other columns on creation
+func CreateKanbanColumn(ctx context.Context, id *string, projectID *string, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, error) {
+	if projectID == nil || createColumn == nil {
+		return types.KanbanColumn{}, errors.New("All arguments must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanColumn, error) {
+		row := tx.QueryRow(ctx, `
+        	INSERT INTO "kanbanColumns" ("id", "projectID", "name", "order", "labelID")
+        	VALUES ($1, $2, $3, $4, $5)
+        	RETURNING *
+    	`, id, createColumn.ProjectID, createColumn.Name, createColumn.Order, createColumn.LabelID)
+
+		var newColumn types.KanbanColumn
+		var labelID *string
+		err := row.Scan(&newColumn.ID, &newColumn.ProjectID, &newColumn.Name, &newColumn.Order, &labelID)
+		if err != nil {
+			return types.KanbanColumn{}, err
 		}
 
-		return nil, nil
+		if labelID != nil {
+			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
+
+			if err != nil {
+				return types.KanbanColumn{}, err
+			}
+
+			newColumn.Label = &label
+		}
+
+		return newColumn, err
 	})
+}
+
+func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error) {
+	if id == nil {
+		return types.KanbanColumn{}, errors.New("Id must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanColumn, error) {
+		row := tx.QueryRow(ctx, `SELECT * FROM "kanbanColumns" WHERE id = $1`, id)
+
+		var column types.KanbanColumn
+		var labelID *string
+		err := row.Scan(&column.ID, &column.ProjectID, &column.Name, &column.Order, &labelID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanColumn{}, err
+		} else if err != nil {
+			return types.KanbanColumn{}, errors.Wrap(err, "error getting column")
+		}
+
+		if labelID != nil {
+			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
+
+			if err != nil {
+				return types.KanbanColumn{}, err
+			}
+
+			column.Label = &label
+		}
+
+		return column, nil
+	})
+}
+
+// TODO: reorder other columns on update
+func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.UpdateKanbanColumn, column types.KanbanColumn) (types.KanbanColumn, error) {
+	if id == nil || updateColumn == nil {
+		return types.KanbanColumn{}, errors.New("all arguments must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanColumn, error) {
+		var newLabelID *string
+		if updateColumn.LabelID != nil {
+			newLabelID = updateColumn.LabelID
+		} else if updateColumn.DeleteLabel != nil {
+			newLabelID = nil
+		} else if column.Label != nil {
+			newLabelID = &column.Label.ID
+		}
+
+		row := tx.QueryRow(ctx, `UPDATE "kanbanColumns" SET "name"=$1, "order"=$2, "labelID"=$3 WHERE "id"=$4 RETURNING *`,
+			utils.UpdateSelector(updateColumn.Name, &column.Name),
+			utils.UpdateSelector(updateColumn.Order, &column.Order),
+			newLabelID,
+			id)
+
+		var updatedColumn types.KanbanColumn
+		var labelID *string
+		err := row.Scan(&updatedColumn.ID, &updatedColumn.ProjectID, &updatedColumn.Name, &updatedColumn.Order, &labelID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanColumn{}, err
+		} else if err != nil {
+			return types.KanbanColumn{}, errors.Wrap(err, "error getting column")
+		}
+
+		if labelID != nil {
+			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
+
+			if err != nil {
+				return types.KanbanColumn{}, err
+			}
+
+			updatedColumn.Label = &label
+		}
+
+		return updatedColumn, nil
+	})
+}
+
+// TODO: reorder other columns on delete
+func DeleteKanbanColumn(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("Id must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `DELETE FROM "kanbanColumns" WHERE id = $1`, id)
 
 	return err
+}
+
+func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, error) {
+	if userID == nil {
+		return []types.Project{}, errors.New("UserId must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) ([]types.Project, error) {
+		rows, err := tx.Query(ctx, `
+			SELECT DISTINCT p.*
+			FROM "projects" p
+			WHERE p."creatorID" = $1
+			    OR EXISTS (
+			        SELECT 1 FROM "projectAdmins" pa 
+			        WHERE pa."projectID" = p."id" AND pa."userID" = $1
+			    )
+			    OR EXISTS (
+			        SELECT 1 FROM "projectMembers" pm 
+			        WHERE pm."projectID" = p."id" AND pm."userID" = $1
+			    )
+			ORDER BY p."createdAt" DESC;
+		`, userID)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var projects []types.Project
+		for rows.Next() {
+			var project types.Project
+			err := rows.Scan(
+				&project.ID,
+				&project.CreatorID,
+				&project.Name,
+				&project.Description,
+				&project.CreatedAt,
+				&project.UpdatedAt,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			admins, err := queryReturning[types.ProjectAdmin](ctx,
+				`SELECT * FROM "projectAdmins" WHERE "projectID" = $1`, project.ID)
+			if err != nil {
+				return nil, err
+			}
+			project.AdminIDs = utils.Map(func(i int, admin types.ProjectAdmin) string {
+				return admin.UserID
+			}, admins)
+
+			members, err := queryReturning[types.ProjectMember](ctx,
+				`SELECT * FROM "projectMembers" WHERE "projectID" = $1`, project.ID)
+			if err != nil {
+				return nil, err
+			}
+			project.MembersIDs = utils.Map(func(i int, member types.ProjectMember) string {
+				return member.UserID
+			}, members)
+
+			projects = append(projects, project)
+		}
+
+		return projects, rows.Err()
+	})
+}
+
+func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, error) {
+	if projectID == nil {
+		return []types.KanbanColumn{}, errors.New("projectID must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) ([]types.KanbanColumn, error) {
+		rows, err := tx.Query(ctx, `
+                SELECT * FROM "kanbanColumns" WHERE "projectID"=$1 ORDER BY "order" ASC
+            `, projectID)
+
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var columns []types.KanbanColumn
+		for rows.Next() {
+			var column types.KanbanColumn
+			var labelID *string
+			err := rows.Scan(
+				&column.ID,
+				&column.ProjectID,
+				&column.Name,
+				&column.Order,
+				&labelID,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			if labelID != nil {
+				label, err := queryOneReturningTx[types.KanbanColumnLabel](ctx, tx, `SELECT * FROM "kanbanColumnLabels" WHERE "id" = $1`, labelID)
+				if err != nil {
+					return nil, err
+				}
+				column.Label = &label
+			}
+
+			columns = append(columns, column)
+		}
+
+		return columns, nil
+	})
 }
