@@ -3,6 +3,7 @@ import authContext from '../../auth.context.ts'
 import styles from './CredentialForm.module.css'
 import TextInput from '../../../../shared/Inputs/TextInput'
 import PasswordInput from '../../../../shared/Inputs/PasswordInput'
+import DateInput from '../../../../shared/Inputs/DateInput'
 
 interface IFormProps {
   actionType: 'register' | 'login'
@@ -80,6 +81,14 @@ const CredentialForm = (props: PropsWithChildren<IFormProps>) => {
               placeholder='email'
               type='text'
               autoComplete='off'
+              inputStyle={{
+                color: '2F3D53'
+              }}
+            />
+            <DateInput
+              name={'date_of_birth'}
+              onChange={context.onChange}
+              placeholder={'date of birth'}
             />
             <PasswordInput
               serverError={props.serverError}

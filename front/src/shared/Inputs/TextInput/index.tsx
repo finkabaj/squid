@@ -4,7 +4,7 @@ import cn from '../../../utils/cn.ts'
 export interface ITextInputProps {
   style?: CSSProperties
   inputStyle?: CSSProperties
-  value?: string
+  value: string
   name: string
   onChange: (val: string, name: string) => void
   disabled?: boolean
@@ -52,6 +52,7 @@ const TextInput = ({
   }, [])
   return (
     <div className='input-wrapper' style={style}>
+      {children}
       <input
         ref={inputRef}
         data-error={isError}
