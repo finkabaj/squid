@@ -75,11 +75,28 @@ func GetProject(userID *string, projectID *string) (types.Project, error) {
 
 	if project.CreatorID != *userID &&
 		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
-		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.AdminIDs) {
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
 		return types.Project{}, utils.NewUnauthorizedError(errors.New("you cannot fetch a project in which you are not participating"))
 	}
 
 	return project, nil
+}
+
+func GetProjects(userID *string) ([]types.Project, error) {
+	if userID == nil {
+		return []types.Project{}, utils.NewBadRequestError(errors.New("userID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	projects, err := repository.GetProjectsByUserID(ctx, userID)
+
+	if err != nil {
+		return []types.Project{}, utils.NewInternalError(err)
+	}
+
+	return projects, nil
 }
 
 func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProject) (types.Project, error) {
@@ -166,9 +183,172 @@ func DeleteProject(user *types.User, projectID *string) (types.Project, error) {
 
 	err = repository.DeleteProject(ctx, &user.ID, projectID)
 
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return types.Project{}, utils.NewInternalError(err)
 	}
 
 	return project, nil
+}
+
+func CreateColumn(user *types.User, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, types.Project, error) {
+	if user == nil || createColumn == nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("user or createColumn is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, &createColumn.ProjectID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", createColumn.ProjectID)))
+	} else if err != nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
+		return types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can create new column"))
+	}
+
+	id := uuid.New().String()
+
+	newColumn, err := repository.CreateKanbanColumn(ctx, &id, &project.ID, createColumn)
+
+	if err != nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return newColumn, project, nil
+}
+
+func GetColumn(columnID *string, userID *string) (types.KanbanColumn, error) {
+	if columnID == nil || userID == nil {
+		return types.KanbanColumn{}, utils.NewBadRequestError(errors.New("columnID or userID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	column, err := repository.GetKanbanColumn(ctx, columnID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumn{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
+	} else if err != nil {
+		return types.KanbanColumn{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+
+	if err != nil {
+		return types.KanbanColumn{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(_ int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(_ int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.KanbanColumn{}, utils.NewUnauthorizedError(errors.New("user not participating in that project"))
+	}
+
+	return column, nil
+}
+
+func UpdateColumn(columnID *string, user *types.User, updateColumn *types.UpdateKanbanColumn) (types.KanbanColumn, types.Project, error) {
+	if columnID == nil || user == nil || updateColumn == nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("columnID or user or updateColumn is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, &updateColumn.ProjectID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateColumn.ProjectID)))
+	} else if err != nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
+		return types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can update column"))
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, columnID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
+	} else if err != nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	updatedColumn, err := repository.UpdateKanbanColumn(ctx, columnID, updateColumn, column)
+
+	if err != nil {
+		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedColumn, project, nil
+}
+
+func DeleteColumn(columnID *string, user *types.User) (types.Project, error) {
+	if columnID == nil || user == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("columnID or user is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	column, err := repository.GetKanbanColumn(ctx, columnID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can delete column"))
+	}
+
+	err = repository.DeleteKanbanColumn(ctx, columnID)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func GetColumns(projectID *string, userID *string) ([]types.KanbanColumn, error) {
+	if projectID == nil || userID == nil {
+		return []types.KanbanColumn{}, utils.NewBadRequestError(errors.New("projectID or userID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, projectID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.KanbanColumn{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return []types.KanbanColumn{}, utils.NewUnauthorizedError(errors.New("you cannot fetch a project in which you are not participating"))
+	}
+
+	columns, err := repository.GetColumns(ctx, projectID)
+
+	if err != nil {
+		return []types.KanbanColumn{}, utils.NewInternalError(err)
+	}
+
+	return columns, nil
 }

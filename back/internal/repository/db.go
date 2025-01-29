@@ -88,7 +88,7 @@ func queryReturning[T any](ctx context.Context, query string, args ...interface{
 	return result, nil
 }
 
-func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
+func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
 	var result T
 	row, err := tx.Query(ctx, query, args...)
 	if err != nil {
@@ -97,7 +97,26 @@ func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args 
 	defer row.Close()
 
 	result, err = pgx.CollectExactlyOneRow(row, pgx.RowToStructByName[T])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, err
+	} else if err != nil {
+		return result, errors.Wrap(err, "error collecting row")
+	}
+	return result, nil
+}
+
+func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) ([]T, error) {
+	var result []T
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
+		return result, errors.Wrap(err, "error executing query")
+	}
+	defer rows.Close()
+
+	result, err = pgx.CollectRows(rows, pgx.RowToStructByName[T])
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, err
+	} else if err != nil {
 		return result, errors.Wrap(err, "error collecting row")
 	}
 	return result, nil
