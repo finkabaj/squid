@@ -26,6 +26,7 @@ const lastNameValidate= (lastName: string): IValidationFunctionResponse | null  
     if (!lastName){
         return {key: 'last_name', message: 'Enter last name'}
     }
+    return null
 }
 const dateValidate = (date_of_birth: Date): IValidationFunctionResponse | null => {
     if (!date_of_birth) {

@@ -63,12 +63,14 @@ input::placeholder {
     color: #2F3D53;
     font-size: 16px;
 }
+
 .date-picker .ant-picker-suffix {
     position: absolute;
     right: 14px;
     top: 50%;
     transform: translateY(-50%);
 }
+
 .date-picker .ant-picker-clear {
     position: absolute;
     right: 18px;

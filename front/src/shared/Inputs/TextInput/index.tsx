@@ -21,6 +21,7 @@ export interface ITextInputProps {
   onBlur?: () => void
   error?: boolean
   errorText?: string
+  size?: string
 }
 
 const TextInput = ({

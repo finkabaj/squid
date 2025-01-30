@@ -3,7 +3,7 @@ type Mapping = Record<string, unknown>
 type Argument = Value | Mapping | ArgumentArray
 interface ArgumentArray extends Array<Argument> {}
 
-const cn = (...arg) => {
+const cn = (...arg: ArgumentArray[]) => {
   if (typeof arg[0] === 'string') return arg.filter(Boolean).join(' ')
 
   const classes = []

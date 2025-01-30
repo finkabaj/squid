@@ -8,11 +8,6 @@ import authApi from "../../screens/Auth/auth.api.ts";
 const http = axios.create({
     baseURL: config.API_URL,
     withCredentials: true,
-    headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
 
 })
 
@@ -68,7 +63,6 @@ export const applyInterceptors = (
             if (shouldLogout) {
                 localStorage.removeItem('access_token')
                 setAuthState({
-                    user: null,
                     token_pair: {access_token: '', refresh_token: ''},
 
                 })

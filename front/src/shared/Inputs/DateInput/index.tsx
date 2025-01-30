@@ -5,7 +5,6 @@ import ru_RU from 'antd/locale/ru_RU'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import timeUtils from '../../../utils/time.utils.ts'
-import { FaCalendarAlt } from "react-icons/fa";
 import CalendarIcon from "../../../assets/icons/calendar.svg?react"
 
 

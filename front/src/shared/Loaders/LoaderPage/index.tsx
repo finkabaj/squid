@@ -1,9 +1,12 @@
 import LoaderSpinner from "../LoderSpinner";
-
-const LoaderPage = () => {
+interface IProps{
+ label?: string
+}
+const LoaderPage = (props: IProps) => {
     return (
         <div>
-            <LoaderSpinner/>
+          {props.label}
+          <LoaderSpinner/>
         </div>
     );
 };

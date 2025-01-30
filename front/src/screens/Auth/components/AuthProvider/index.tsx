@@ -39,9 +39,8 @@ const AuthProvider = (props: PropsWithChildren) => {
       })
     })
   }, [])
-
   if (loading) {
-    return <LoaderPage inscription={`Кажется, вы тут уже были...\nПытаемся авторизоваться...`} />
+    return <LoaderPage label={`Кажется, вы тут уже были...\nПытаемся авторизоваться...`} />
   }
 
   if (!authState.token_pair.access_token || authState.token_pair.access_token === '') {

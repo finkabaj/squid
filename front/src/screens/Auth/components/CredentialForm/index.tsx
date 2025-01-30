@@ -27,7 +27,7 @@ const CredentialForm = (props: PropsWithChildren<IFormProps>) => {
               placeholder='email'
               type='text'
               autoComplete='off'
-              autofocus='true'
+              autofocus={true}
             />
             <PasswordInput
               serverError={props.serverError}
@@ -53,7 +53,7 @@ const CredentialForm = (props: PropsWithChildren<IFormProps>) => {
               placeholder='username'
               type='text'
               autoComplete='off'
-              autofocus='true'
+              autofocus={true}
             />
             <TextInput
               serverError={props.serverError}
