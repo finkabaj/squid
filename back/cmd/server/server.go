@@ -57,6 +57,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(myMiddleware.Cors([]string{"http://localhost:3000"}))
 
 	wsServer := websocket.NewServer()
 
