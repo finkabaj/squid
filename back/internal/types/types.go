@@ -109,17 +109,17 @@ type KanbanColumn struct {
 type CreateKanbanColumn struct {
 	ProjectID string `json:"project_id" validate:"required,uuid"`
 	Name      string `json:"name" validate:"required,min=3,max=50"`
-	Order     int    `json:"order" validate:"required,min=3,max=20"`
+	Order     int    `json:"order" validate:"required,min=0,max=20"`
 
-	LabelID string `json:"label_id,omitempty" validate:"omitempty,uuid"`
+	LabelID *string `json:"label_id,omitempty" validate:"omitempty,uuid"`
 }
 
 type UpdateKanbanColumn struct {
-	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	Name        string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Order       int    `json:"order,omitempty" validate:"omitempty,min=3,max=20"`
-	LabelID     string `json:"label_id,omitempty" validate:"omitempty,uuid"`
-	DeleteLabel bool   `json:"delete_label,omitempty" validate:"omitempty,oneof=true false"`
+	ProjectID   string  `json:"project_id" validate:"required,uuid"`
+	Name        *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Order       *int    `json:"order,omitempty" validate:"omitempty,min=0,max=20"`
+	LabelID     *string `json:"label_id,omitempty" validate:"omitempty,uuid"`
+	DeleteLabel *bool   `json:"delete_label,omitempty" validate:"omitempty,oneof=true false"`
 }
 
 type SpecialTag string
@@ -146,9 +146,9 @@ type CreateKanbanColumnLabel struct {
 }
 
 type UpdateKanbanColumnLabel struct {
-	ProjectID string `json:"project_id" validate:"required,uuid"`
-	Name      string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Color     string `json:"color,omitempty" validate:"omitempty,min=3,max=20"`
+	ProjectID string  `json:"project_id" validate:"required,uuid"`
+	Name      *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Color     *string `json:"color,omitempty" validate:"omitempty,min=3,max=20"`
 }
 
 type Priority string
@@ -180,7 +180,7 @@ type KanbanRow struct {
 type CreateKanbanRow struct {
 	ColumnID         string     `json:"column_id" validate:"required,uuid"`
 	Name             string     `json:"name" validate:"required,min=3,max=50"`
-	Order            int        `json:"order" validate:"required,min=3,max=20"`
+	Order            int        `json:"order" validate:"required,min=0,max=20"`
 	AssignedUsersIDs []string   `json:"assigned_users_ids" validate:"required,dive,uuid"`
 	Priority         *Priority  `json:"priority" validate:"required,min=3,max=20"`
 	DueDate          *time.Time `json:"due_date" validate:"required,date"`
@@ -189,7 +189,7 @@ type CreateKanbanRow struct {
 type UpdateKanbanRow struct {
 	ColumnID         string     `json:"column_id" validate:"required,uuid"`
 	Name             string     `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Order            int        `json:"order,omitempty" validate:"omitempty,min=3,max=20"`
+	Order            int        `json:"order,omitempty" validate:"omitempty,min=0,max=20"`
 	AssignedUsersIDs []string   `json:"assigned_users_ids,omitempty" validate:"omitempty,dive,uuid"`
 	Priority         *Priority  `json:"priority,omitempty" validate:"omitempty,min=3,max=20"`
 	DueDate          *time.Time `json:"due_date,omitempty" validate:"omitempty,date"`

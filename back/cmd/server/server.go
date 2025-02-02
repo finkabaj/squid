@@ -11,6 +11,7 @@ import (
 	myMiddleware "github.com/finkabaj/squid/back/internal/middleware"
 	"github.com/finkabaj/squid/back/internal/websocket"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/rs/cors"
 
 	"github.com/finkabaj/squid/back/internal/repository"
 	"github.com/finkabaj/squid/back/internal/types"
@@ -57,6 +58,7 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(cors.Default().Handler)
 
 	wsServer := websocket.NewServer()
 
