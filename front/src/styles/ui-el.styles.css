@@ -1,0 +1,83 @@
+.input-wrapper {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.input {
+    height: 65px;
+    width: 541px;
+    padding-left: 15px;
+    border-radius: 20px;
+    background-color: var(--dark-gray);
+    border: none;
+    color: var(--navy-blue);
+    font-family: Jua,
+    sans-serif;
+    font-weight: 400;
+}
+
+input:focus {
+    outline: none;
+}
+
+input::placeholder {
+    font-size: 16px;
+    color: var(--navy-blue);
+}
+
+.date-picker {
+    height: 65px;
+    width: 541px;
+    padding-left: 15px;
+    border-radius: 20px;
+    background-color: var(--dark-gray);
+    border: none;
+    font-family: Jua,
+    sans-serif;
+    font-weight: 400;
+
+}
+
+.date-picker::placeholder {
+    color: #b3d4fc;
+}
+
+.date-picker:hover {
+    background-color: var(--dark-gray);
+    outline: none;
+}
+
+.date-picker:focus-within {
+    background-color: var(--dark-gray);
+    outline-color: var(--navy-blue);
+}
+
+.date-input {
+    font-size: 16px;
+    color: #2F3D53;
+}
+
+.date-picker .ant-picker-input > input::placeholder {
+    color: #2F3D53;
+    font-size: 16px;
+}
+
+.date-picker .ant-picker-suffix {
+    position: absolute;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.date-picker .ant-picker-clear {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+
+
+
