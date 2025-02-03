@@ -82,14 +82,10 @@ const CredentialForm = (props: PropsWithChildren<IFormProps>) => {
               type='text'
               autoComplete='off'
               inputStyle={{
-                color: '2F3D53'
+                color: '2F3D53',
               }}
             />
-            <DateInput
-              name={'date_of_birth'}
-              onChange={context.onChange}
-              placeholder={'date of birth'}
-            />
+            <DateInput name={'date_of_birth'} onChange={context.onChange} placeholder={'date of birth'} />
             <PasswordInput
               serverError={props.serverError}
               label='enter your password'

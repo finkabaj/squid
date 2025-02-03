@@ -67,7 +67,7 @@ const TextInput = ({
         onBlur={onBlur}
         {...props}
       />
-      {isError && <span className={'text-error'} >{error}</span>}
+      {isError && <span className={'text-error'}>{error}</span>}
     </div>
   )
 }

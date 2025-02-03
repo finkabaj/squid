@@ -5,9 +5,7 @@ import ru_RU from 'antd/locale/ru_RU'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import timeUtils from '../../../utils/time.utils.ts'
-import CalendarIcon from "../../../assets/icons/calendar.svg?react"
-
-
+import CalendarIcon from '../../../assets/icons/calendar.svg?react'
 
 export interface IDateProps {
   style?: CSSProperties
