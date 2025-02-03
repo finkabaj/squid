@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/finkabaj/squid/back/internal/types"
-	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/pkg/errors"
 )
 
@@ -69,11 +68,17 @@ func UpdateUser(ctx context.Context, user *types.User, updateUser *types.UpdateU
 	}
 
 	if updateUser != nil {
-		return queryOneReturning[types.User](ctx, `UPDATE "users" SET "username"=$1, "firstName"=$2, "lastName"=$3, "dateOfBirth"=$4 WHERE "id"=$5 RETURNING *`,
-			utils.UpdateSelector(updateUser.Username, &user.Username),
-			utils.UpdateSelector(updateUser.FirstName, &user.FirstName),
-			utils.UpdateSelector(updateUser.LastName, &user.LastName),
-			utils.UpdateSelector(updateUser.DateOfBirth, &user.DateOfBirth),
+		return queryOneReturning[types.User](ctx, `UPDATE "users" 
+            SET "username"=COALESCE($1, "username"),
+            "firstName"=COALESCE($2, "firstName"),
+            "lastName"=COALESCE($3, "lastName"),
+            "dateOfBirth"=COALESCE($4, "dateOfBirth")
+            WHERE "id"=$5
+            RETURNING *`,
+			updateUser.Username,
+			updateUser.FirstName,
+			updateUser.LastName,
+			updateUser.DateOfBirth,
 			user.ID,
 		)
 	} else {

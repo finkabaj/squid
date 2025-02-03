@@ -13,15 +13,18 @@ import (
 type EventType string
 
 const (
-	PingEvent                EventType = "PING"
-	PongEvent                EventType = "PONG"
-	UndefinedEvent           EventType = "UNDEFINED"
-	ProjectCreatedEvent      EventType = "PROJECT_CREATED"
-	ProjectUpdatedEvent      EventType = "PROJECT_UPDATED"
-	ProjectDeletedEvent      EventType = "PROJECT_DELETED"
-	KanbanColumnCreatedEvent EventType = "KANBAN_COLUMN_CREATED"
-	KanbanColumnUpdatedEvent EventType = "KANBAN_COLUMN_UPDATED"
-	KanbanColumnDeletedEvent EventType = "KANBAN_COLUMN_DELETED"
+	PingEvent                     EventType = "PING"
+	PongEvent                     EventType = "PONG"
+	UndefinedEvent                EventType = "UNDEFINED"
+	ProjectCreatedEvent           EventType = "PROJECT_CREATED"
+	ProjectUpdatedEvent           EventType = "PROJECT_UPDATED"
+	ProjectDeletedEvent           EventType = "PROJECT_DELETED"
+	KanbanColumnCreatedEvent      EventType = "KANBAN_COLUMN_CREATED"
+	KanbanColumnUpdatedEvent      EventType = "KANBAN_COLUMN_UPDATED"
+	KanbanColumnDeletedEvent      EventType = "KANBAN_COLUMN_DELETED"
+	KanbanColumnLabelCreatedEvent EventType = "KANBAN_COLUMN_LABEL_CREATED"
+	KanbanColumnLabelUpdatedEvent EventType = "KANBAN_COLUMN_LABEL_UPDATED"
+	KanbanColumnLabelDeletedEvent EventType = "KANBAN_COLUMN_LABEL_DELETED"
 )
 
 type Event struct {

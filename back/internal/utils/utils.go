@@ -135,14 +135,6 @@ func CreateJWTPair(user *types.User, refreshToken *types.RefreshToken) (map[stri
 	}, nil
 }
 
-// DO NOT USE if don't know what it for!!!
-func UpdateSelector[T any](update *T, current *T) *T {
-	if update != nil {
-		return update
-	}
-
-	return current
-}
 func Map[T any, F any](mapper func(int, T) F, values []T) []F {
 	result := make([]F, len(values))
 

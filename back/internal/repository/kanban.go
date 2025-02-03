@@ -111,10 +111,10 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 	return withTx(ctx, func(tx pgx.Tx) (types.Project, error) {
 		row := tx.QueryRow(ctx, `
             UPDATE "projects"
-            SET "name"=$1, "description"=$2
+            SET "name"=COALESCE($1, "name"), "description"=COALESCE($2, "description")
             WHERE "id"=$3
             RETURNING *
-            `, utils.UpdateSelector(updateProject.Name, &project.Name), utils.UpdateSelector(updateProject.Description, &project.Description), id)
+            `, updateProject.Name, updateProject.Description, id)
 
 		var project types.Project
 		err := row.Scan(&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.CreatedAt, &project.UpdatedAt)
@@ -269,9 +269,9 @@ func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.Upd
 			newLabelID = &column.Label.ID
 		}
 
-		row := tx.QueryRow(ctx, `UPDATE "kanbanColumns" SET "name"=$1, "order"=$2, "labelID"=$3 WHERE "id"=$4 RETURNING *`,
-			utils.UpdateSelector(updateColumn.Name, &column.Name),
-			utils.UpdateSelector(updateColumn.Order, &column.Order),
+		row := tx.QueryRow(ctx, `UPDATE "kanbanColumns" SET "name"=COALESCE($1, "name"), "order"=COALESCE($2, "order"), "labelID"=$3 WHERE "id"=$4 RETURNING *`,
+			updateColumn.Name,
+			updateColumn.Order,
 			newLabelID,
 			id)
 
@@ -417,4 +417,64 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 
 		return columns, nil
 	})
+}
+
+func CreateKanbanColumnLabel(ctx context.Context, id *string, createColumnLabel *types.CreateKanbanColumnLabel, specialTag *types.SpecialTag) (types.KanbanColumnLabel, error) {
+	if id == nil || createColumnLabel == nil {
+		return types.KanbanColumnLabel{}, errors.New("createColumnLabel and id must not be nil")
+	}
+
+	return queryOneReturning[types.KanbanColumnLabel](ctx, `
+        INSERT INTO "kanbanColumnLabels" 
+        ("id", "name", "projectID", "color", "specialTag") 
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+    `, id, createColumnLabel.Name, createColumnLabel.ProjectID, createColumnLabel.Color, specialTag)
+}
+
+func GetKanbanColumnLabel(ctx context.Context, id *string) (types.KanbanColumnLabel, error) {
+	if id == nil {
+		return types.KanbanColumnLabel{}, errors.New("id is nil")
+	}
+
+	return queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM "kanbanColumnLabels" WHERE "id"=$1`, id)
+}
+
+func DeleteKanbanColumnLabel(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("createColumnLabel must not be nil")
+	}
+
+	_, err := queryOneReturning[types.KanbanColumnLabel](ctx, `
+        DELETE FROM "kanbanColumnLabels" WHERE "id" = $1
+    `, id)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	return nil
+}
+
+func UpdateKanbanColumnLabel(ctx context.Context, id *string, updateColumnLabel *types.UpdateKanbanColumnLabel) (types.KanbanColumnLabel, error) {
+	if id == nil || updateColumnLabel == nil {
+		return types.KanbanColumnLabel{}, errors.New("createColumnLabel and id  must not be nil")
+	}
+
+	return queryOneReturning[types.KanbanColumnLabel](ctx, `
+        UPDATE "kanbanColumnLabels" 
+        SET "name" = coalesce($1, "name"), "color" = coalesce($2, "color")
+        WHERE "id"=$3
+        RETURNING *
+    `, updateColumnLabel.Name, updateColumnLabel.Color, id)
+}
+
+func GetKanbanColumnLabels(ctx context.Context, projectID *string) ([]types.KanbanColumnLabel, error) {
+	if projectID == nil {
+		return nil, errors.New("projectID must not be nil")
+	}
+
+	return queryReturning[types.KanbanColumnLabel](ctx, `
+        SELECT * FROM "kanbanColumnLabels" WHERE "projectID" = $1
+    `, projectID)
 }

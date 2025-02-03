@@ -234,7 +234,7 @@ func setup() (err error) {
 		    "projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
 		    "specialTag" "specialTags",
 		    "name" VARCHAR(50) NOT NULL,
-		    "color" VARCHAR(255) NOT NULL
+		    "color" INTEGER NOT NULL
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_kanban_column_labels_project ON "kanbanColumnLabels"("projectID");
@@ -261,7 +261,7 @@ func setup() (err error) {
 		    "id" VARCHAR(255) PRIMARY KEY,
 			"projectID" VARCHAR(255) NOT NULL REFERENCES "projects"("id") ON DELETE CASCADE,
 		    "name" VARCHAR(50) NOT NULL,
-			"color" VARCHAR(255) NOT NULL
+			"color" INTEGER NOT NULL
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_kanban_row_labels_project ON "kanbanRowLabels"("projectID");

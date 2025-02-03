@@ -32,16 +32,21 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 
 	r.Route("/kanban", func(r chi.Router) {
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
-		r.With(middleware.ValidateJWT).Get("/project/{id}", c.getProject)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{id}", c.updateProject)
-		r.With(middleware.ValidateJWT).Delete("/project/{id}", c.deleteProject)
+		r.With(middleware.ValidateJWT).Get("/project/{project_id}", c.getProject)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{project_id}", c.updateProject)
+		r.With(middleware.ValidateJWT).Delete("/project/{project_id}", c.deleteProject)
 		r.With(middleware.ValidateJWT).Get("/projects", c.getProjects)
 
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanColumn]()).Post("/column", c.createColumn)
-		r.With(middleware.ValidateJWT).Get("/column/{id}", c.getColumn)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumn]()).Patch("/column/{id}", c.updateColumn)
-		r.With(middleware.ValidateJWT).Delete("/column/{id}", c.deleteColumn)
-		r.With(middleware.ValidateJWT).Get("/columns/{id}", c.getColumns)
+		r.With(middleware.ValidateJWT).Get("/column/{column_id}", c.getColumn)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumn]()).Patch("/column/{column_id}", c.updateColumn)
+		r.With(middleware.ValidateJWT).Delete("/column/{column_id}", c.deleteColumn)
+		r.With(middleware.ValidateJWT).Get("/columns/{project_id}", c.getColumns)
+
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanColumnLabel]()).Post("/column/label", c.createColumnLabel)
+		r.With(middleware.ValidateJWT).Delete("/column/label/{label_id}", c.deleteColumnLabel)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumnLabel]()).Patch("/column/label/{label_id}", c.updateColumnLabel)
+		r.With(middleware.ValidateJWT).Get("/column/labels/{project_id}", c.getColumnLabels)
 	})
 
 	kanbanControllerInitialized = true
@@ -89,15 +94,15 @@ func (c *KanbanController) createProject(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *KanbanController) getProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
 		return
 	}
 
 	user := middleware.UserFromContext(r.Context())
 
-	project, err := service.GetProject(&user.ID, &id)
+	project, err := service.GetProject(&user.ID, &projectID)
 
 	if err != nil {
 		utils.HandleError(w, err)
@@ -110,8 +115,8 @@ func (c *KanbanController) getProject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *KanbanController) updateProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
 		return
 	}
@@ -125,7 +130,7 @@ func (c *KanbanController) updateProject(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	project, err := service.UpdateProject(&id, &user, &updateProject)
+	project, err := service.UpdateProject(&projectID, &user, &updateProject)
 
 	if err != nil {
 		utils.HandleError(w, err)
@@ -143,15 +148,15 @@ func (c *KanbanController) updateProject(w http.ResponseWriter, r *http.Request)
 }
 
 func (c *KanbanController) deleteProject(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
 		return
 	}
 
 	user := middleware.UserFromContext(r.Context())
 
-	project, err := service.DeleteProject(&user, &id)
+	project, err := service.DeleteProject(&user, &projectID)
 
 	if err != nil {
 		utils.HandleError(w, err)
@@ -195,15 +200,15 @@ func (c *KanbanController) createColumn(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *KanbanController) getColumn(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	columnID := chi.URLParam(r, "column_id")
+	if columnID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("column id is required")))
 		return
 	}
 
 	user := middleware.UserFromContext(r.Context())
 
-	column, err := service.GetColumn(&id, &user.ID)
+	column, err := service.GetColumn(&columnID, &user.ID)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
@@ -216,8 +221,8 @@ func (c *KanbanController) getColumn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	columnID := chi.URLParam(r, "column_id")
+	if columnID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("column id is required")))
 		return
 	}
@@ -230,7 +235,7 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 
 	user := middleware.UserFromContext(r.Context())
 
-	column, project, err := service.UpdateColumn(&id, &user, &columnData)
+	column, project, err := service.UpdateColumn(&columnID, &user, &columnData)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
@@ -248,15 +253,15 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *KanbanController) deleteColumn(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	columnID := chi.URLParam(r, "column_id")
+	if columnID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("column id is required")))
 		return
 	}
 
 	user := middleware.UserFromContext(r.Context())
 
-	project, err := service.DeleteColumn(&id, &user)
+	project, err := service.DeleteColumn(&columnID, &user)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
@@ -274,15 +279,15 @@ func (c *KanbanController) deleteColumn(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *KanbanController) getColumns(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
 		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
 		return
 	}
 
 	user := middleware.UserFromContext(r.Context())
 
-	columns, err := service.GetColumns(&id, &user.ID)
+	columns, err := service.GetColumns(&projectID, &user.ID)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
@@ -290,6 +295,111 @@ func (c *KanbanController) getColumns(w http.ResponseWriter, r *http.Request) {
 
 	if err = utils.MarshalBody(w, http.StatusOK, columns); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal colums"))
+		return
+	}
+}
+
+func (c *KanbanController) createColumnLabel(w http.ResponseWriter, r *http.Request) {
+	createColumnLabel, ok := middleware.JsonFromContext(r.Context()).(types.CreateKanbanColumnLabel)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get createColumnLabel from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	label, project, err := service.CreateColumnLabel(&user.ID, &createColumnLabel)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusCreated, label); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal label")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnLabelCreatedEvent, "kanban column label created", label, projectUsers)
+}
+
+func (c *KanbanController) deleteColumnLabel(w http.ResponseWriter, r *http.Request) {
+	labelID := chi.URLParam(r, "label_id")
+	if labelID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("column label id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeleteColumnLabel(&user.ID, &labelID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "column label deleted"}); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal okResponse")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnLabelDeletedEvent, "kanban column label deleted", nil, projectUsers)
+}
+
+func (c *KanbanController) updateColumnLabel(w http.ResponseWriter, r *http.Request) {
+	updateLabel, ok := middleware.JsonFromContext(r.Context()).(types.UpdateKanbanColumnLabel)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get updateColumnLabel from context")))
+		return
+	}
+
+	labelID := chi.URLParam(r, "label_id")
+	if labelID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("column label id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	label, project, err := service.UpdateColumnLabel(&user.ID, &labelID, &updateLabel)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, label); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal label")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnLabelUpdatedEvent, "kanban column label updated", label, projectUsers)
+}
+
+func (c *KanbanController) getColumnLabels(w http.ResponseWriter, r *http.Request) {
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	labels, err := service.GetColumnLabels(&user.ID, &projectID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, labels); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal labels")))
 		return
 	}
 }
