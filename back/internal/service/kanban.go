@@ -336,6 +336,8 @@ func GetColumns(projectID *string, userID *string) ([]types.KanbanColumn, error)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return []types.KanbanColumn{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	} else if err != nil {
+		return []types.KanbanColumn{}, utils.NewInternalError(err)
 	}
 
 	if project.CreatorID != *userID &&
@@ -351,4 +353,126 @@ func GetColumns(projectID *string, userID *string) ([]types.KanbanColumn, error)
 	}
 
 	return columns, nil
+}
+
+func CreateColumnLabel(userID *string, createColumnLabel *types.CreateKanbanColumnLabel) (types.KanbanColumnLabel, types.Project, error) {
+	if userID == nil || createColumnLabel == nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createColumnLabel is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, &createColumnLabel.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", createColumnLabel.ProjectID)))
+	} else if err != nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create column label"))
+	}
+
+	id := uuid.New().String()
+
+	label, err := repository.CreateKanbanColumnLabel(ctx, &id, createColumnLabel, nil)
+	if err != nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return label, project, nil
+}
+
+func DeleteColumnLabel(userID *string, labelID *string) (types.Project, error) {
+	if userID == nil || labelID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or labelID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	label, err := repository.GetKanbanColumnLabel(ctx, labelID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *labelID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &label.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete column label"))
+	}
+
+	err = repository.DeleteKanbanColumnLabel(ctx, labelID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func UpdateColumnLabel(userID *string, labelID *string, updateLabel *types.UpdateKanbanColumnLabel) (types.KanbanColumnLabel, types.Project, error) {
+	if userID == nil || labelID == nil || updateLabel == nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or labelID or updateLabel is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, &updateLabel.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateLabel.ProjectID)))
+	} else if err != nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update column label"))
+	}
+
+	updatedLabel, err := repository.UpdateKanbanColumnLabel(ctx, labelID, updateLabel)
+	if err != nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedLabel, project, nil
+}
+
+func GetColumnLabels(userID *string, projectID *string) ([]types.KanbanColumnLabel, error) {
+	if projectID == nil || userID == nil {
+		return nil, utils.NewBadRequestError(errors.New("projectID or userID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	} else if err != nil {
+		return nil, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return nil, utils.NewUnauthorizedError(errors.New("you cannot fetch labels in a project in which you are not participating"))
+	}
+
+	labels, err := repository.GetKanbanColumnLabels(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.KanbanColumnLabel{}, nil
+	} else if err != nil {
+		return nil, utils.NewInternalError(err)
+	}
+
+	return labels, nil
 }

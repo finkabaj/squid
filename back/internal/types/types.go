@@ -134,21 +134,21 @@ const (
 type KanbanColumnLabel struct {
 	ID         string      `json:"id"`
 	ProjectID  string      `json:"project_id"`
-	Name       string      `json:"name"`
 	SpecialTag *SpecialTag `json:"special_tag"`
-	Color      string      `json:"color"`
+	Name       string      `json:"name"`
+	Color      int         `json:"color"`
 }
 
 type CreateKanbanColumnLabel struct {
 	ProjectID string `json:"project_id" validate:"required,uuid"`
 	Name      string `json:"name" validate:"required,min=3,max=50"`
-	Color     string `json:"color" validate:"required,min=3,max=20"`
+	Color     int    `json:"color" validate:"required,min=0,max=16777215"`
 }
 
 type UpdateKanbanColumnLabel struct {
 	ProjectID string  `json:"project_id" validate:"required,uuid"`
 	Name      *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Color     *string `json:"color,omitempty" validate:"omitempty,min=3,max=20"`
+	Color     *int    `json:"color,omitempty" validate:"omitempty,min=0,max=16777215"`
 }
 
 type Priority string
@@ -199,19 +199,19 @@ type KanbanRowLabel struct {
 	ProjectID string `json:"project_id"`
 	ID        string `json:"id"`
 	Name      string `json:"name"`
-	Color     string `json:"color"`
+	Color     int    `json:"color"`
 }
 
 type CreateKanbanRowLabel struct {
 	ProjectID string `json:"project_id" validate:"required,uuid"`
 	Name      string `json:"name" validate:"required,min=3,max=50"`
-	Color     string `json:"color" validate:"required,min=3,max=20"`
+	Color     int    `json:"color" validate:"required,min=0,max=16777215"`
 }
 
 type UpdateKanbanRowLabel struct {
-	ProjectID string `json:"project_id" validate:"required,uuid"`
-	Name      string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Color     string `json:"color,omitempty" validate:"omitempty,min=3,max=20"`
+	ProjectID string  `json:"project_id" validate:"required,uuid"`
+	Name      *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Color     *int    `json:"color,omitempty" validate:"omitempty,min=0,max=16777215"`
 }
 
 type HistoryPoint struct {
