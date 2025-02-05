@@ -9,6 +9,7 @@ import useValidationCtrl from '../../../shared/Validation/useValidationCtrl.ts'
 import validation from '../../../shared/Validation/validation.ts'
 import profileApi from '../../Profile/profile.api.ts'
 import profileAtom from '../../Profile/profile.atom.ts'
+import Cookies from 'js-cookie';
 
 interface IProps {
   actionType: 'register' | 'login'
@@ -21,41 +22,63 @@ const useAuthCtrl = (props: IProps) => {
   const [authValues, setAuthValues] = useState(generateEmptyAuthState())
   const [profileState, setProfileState] = useRecoilState(profileAtom)
 
-  const handleChange = (value: any, name: string) => {
+  const handleChange = (value: string | Date, name: string) => {
     setAuthValues((prev) => ({ ...prev, [name]: value }))
   }
 
   const handleSubmitCredentials = () => {
+    let data
     const actionName = props.actionType === AuthTypeEnum.register ? 'register' : 'login'
-    wait(
-      authApi[actionName]({
-        username: authValues.username,
-        first_name: authValues.first_name,
-        last_name: authValues.last_name,
+
+    if (actionName === 'login') {
+      data = {
         email: authValues.email,
         password: authValues.password,
-        date_of_birth: authValues.date_of_birth,
-      }),
-      (resp) => {
-        if (resp.status === 'success' && actionName === 'register') {
-          props.setAuthType()
-        }
-        if (resp.status === 'success' && actionName === 'login') {
+      }
+      wait(authApi.login(data), (resp) => {
+        if (resp.status === 'success') {
           setAuthState((prev) => ({
             ...prev,
             token_pair: {
-              access_token: resp.body.result.access_token,
-              refresh_token: resp.body.result.refresh_token,
+              access_token: resp.body.token_pair.access_token,
+              refresh_token: resp.body.token_pair.refresh_token,
             },
           }))
+          Cookies.set('refresh_token', resp.body.token_pair.refresh_token)
           localStorage.setItem('access_token', resp.body.token_pair.access_token)
 
           profileApi.getUser(profileState.user_id).then((res: any) => {
             setProfileState(res.body)
           })
         }
+      })
+    } else {
+      data = {
+        username: authValues.username,
+        first_name: authValues.first_name,
+        last_name: authValues.last_name,
+        email: authValues.email,
+        password: authValues.password,
+        date_of_birth: authValues.date_of_birth,
       }
-    )
+      wait(authApi.register(data), (resp) => {
+        if (resp.status === 'success') {
+          setAuthState((prev) => ({
+            ...prev,
+            token_pair: {
+              access_token: resp.body.access_token,
+              refresh_token: resp.body.refresh_token,
+            },
+          }))
+          Cookies.set('refresh_token', resp.body.token_pair.refresh_token)
+          localStorage.setItem('access_token', resp.body.token_pair.access_token)
+
+          profileApi.getUser(profileState.user_id).then((res) => {
+            setProfileState(res.body)
+          })
+        }
+      })
+    }
   }
 
   const validateAuthType =
