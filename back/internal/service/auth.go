@@ -205,7 +205,7 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 	}
 
 	err = repository.DeleteRefreshToken(ctx, &refreshToken.UserID)
-	if err != nil {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return types.TokenPair{}, utils.NewInternalError(err)
 	}
 
