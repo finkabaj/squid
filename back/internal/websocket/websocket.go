@@ -25,6 +25,9 @@ const (
 	KanbanColumnLabelCreatedEvent EventType = "KANBAN_COLUMN_LABEL_CREATED"
 	KanbanColumnLabelUpdatedEvent EventType = "KANBAN_COLUMN_LABEL_UPDATED"
 	KanbanColumnLabelDeletedEvent EventType = "KANBAN_COLUMN_LABEL_DELETED"
+	KanbanRowCreatedEvent         EventType = "KANBAN_ROW_CREATED"
+	KanbanRowUpdatedEvent         EventType = "KANBAN_ROW_UPDATED"
+	KanbanRowDeletedEvent         EventType = "KANBAN_ROW_DELETED"
 )
 
 type Event struct {

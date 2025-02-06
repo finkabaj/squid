@@ -103,7 +103,7 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 	})
 }
 
-func UpdateProject(ctx context.Context, id *string, project *types.Project, updateProject *types.UpdateProject) (types.Project, error) {
+func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateProject) (types.Project, error) {
 	if id == nil || updateProject == nil {
 		return types.Project{}, errors.New("All arguments must not be nil")
 	}
@@ -254,8 +254,8 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 }
 
 // TODO: reorder other columns on update
-func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.UpdateKanbanColumn, column types.KanbanColumn) (types.KanbanColumn, error) {
-	if id == nil || updateColumn == nil {
+func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanColumn, column *types.KanbanColumn) (types.KanbanColumn, error) {
+	if column == nil || updateColumn == nil {
 		return types.KanbanColumn{}, errors.New("all arguments must not be nil")
 	}
 
@@ -273,7 +273,7 @@ func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.Upd
 			updateColumn.Name,
 			updateColumn.Order,
 			newLabelID,
-			id)
+			column.ID)
 
 		var updatedColumn types.KanbanColumn
 		var labelID *string
@@ -477,4 +477,186 @@ func GetKanbanColumnLabels(ctx context.Context, projectID *string) ([]types.Kanb
 	return queryReturning[types.KanbanColumnLabel](ctx, `
         SELECT * FROM "kanbanColumnLabels" WHERE "projectID" = $1
     `, projectID)
+}
+
+func CreateKanbanRow(ctx context.Context, id *string, userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, error) {
+	if id == nil || userID == nil || createRow == nil {
+		return types.KanbanRow{}, errors.New("id, userID and createRow must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanRow, error) {
+		row, err := tx.Query(ctx, `
+            INSERT INTO "kanbanRows" 
+            ("id", "columnID", "name", "description", "order", "creatorID", "priority", "labelID", "dueDate") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *
+        `, id, createRow.ColumnID, createRow.Name, createRow.Description, createRow.Order, userID, createRow.Priority, createRow.LabelID, createRow.DueDate)
+
+		if err != nil {
+			return types.KanbanRow{}, err
+		}
+		defer row.Close()
+
+		var kanbanRow types.KanbanRow
+		var labelID *string
+
+		err = row.Scan(&kanbanRow.ID, &kanbanRow.ColumnID, &kanbanRow.Name, &kanbanRow.Description, &kanbanRow.Order, &kanbanRow.CreatorID, &kanbanRow.Priority, &labelID, &kanbanRow.CreatedAt, &kanbanRow.UpdatedAt, &kanbanRow.DueDate)
+
+		if err != nil {
+			return types.KanbanRow{}, err
+		}
+
+		if len(createRow.AssignedUsersIDs) > 0 {
+			assignee := make([][]interface{}, len(createRow.AssignedUsersIDs))
+
+			for i, userID := range createRow.AssignedUsersIDs {
+				assignee[i] = []interface{}{id, userID}
+			}
+
+			if err = bulkInsert(ctx, tx, "kanbanRowAssignees", []string{"rowID", "userID"}, assignee); err != nil {
+				return types.KanbanRow{}, err
+			}
+
+			kanbanRow.AssignedUsersIDs = createRow.AssignedUsersIDs
+		}
+
+		if labelID != nil {
+			rowLabel, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx, `SELECT * FROM "kanbanRowLabels" WHERE "id" = $1`, labelID)
+
+			if err != nil {
+				return types.KanbanRow{}, err
+			}
+
+			kanbanRow.Label = &rowLabel
+		}
+
+		return kanbanRow, err
+	})
+}
+
+func UpdateKanbanRow(ctx context.Context, updateRow *types.UpdateKanbanRow, row *types.KanbanRow) (types.KanbanRow, error) {
+	if row == nil || updateRow == nil {
+		return types.KanbanRow{}, errors.New("row and updateRow must not be nil")
+	}
+
+	var newLabelID *string
+	if updateRow.LabelID != nil {
+		newLabelID = updateRow.LabelID
+	} else if updateRow.DeleteLabel != nil {
+		newLabelID = nil
+	} else if row.Label != nil {
+		newLabelID = &row.Label.ID
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanRow, error) {
+		qRow, err := tx.Query(ctx,
+			`UPDATE "kanbanRows"
+                SET "name" = coalesce($1, "name"),
+                    "description" = coalesce($2, "description"),
+                    "order" = coalesce($3, "order"),
+                    "priority" = coalesce($4, "priority"),
+                    "labelID" = coalesce($5, "labelID"),
+                    "dueDate" = coalesce($6, "dueDate")
+                WHERE "id" = $7
+            `, updateRow.Name, updateRow.Description, updateRow.Order, updateRow.Priority, newLabelID, updateRow.DueDate, row.ID)
+
+		if err != nil {
+			return types.KanbanRow{}, err
+		}
+		defer qRow.Close()
+
+		var updatedRow types.KanbanRow
+		var labelID *string
+		err = qRow.Scan(&updatedRow.ID, &updatedRow.ColumnID, &updatedRow.Name, &updatedRow.Description, &updatedRow.Order, &updatedRow.Priority, &labelID, &updatedRow.CreatedAt, &updatedRow.UpdatedAt, &updatedRow.DueDate)
+
+		if err != nil {
+			return types.KanbanRow{}, err
+		}
+
+		if updateRow.AssignedUsersIDs != nil {
+			if _, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "kanbanRowAssignees" WHERE "rowID"=$1`, row.ID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return types.KanbanRow{}, err
+			}
+
+			if len(*updateRow.AssignedUsersIDs) > 0 {
+				assignee := make([][]interface{}, len(*updateRow.AssignedUsersIDs))
+
+				for i, userID := range *updateRow.AssignedUsersIDs {
+					assignee[i] = []interface{}{row.ID, userID}
+				}
+
+				if err = bulkInsert(ctx, tx, "kanbanRowAssignees", []string{"rowID", "userID"}, assignee); err != nil {
+					return types.KanbanRow{}, err
+				}
+
+				row.AssignedUsersIDs = *updateRow.AssignedUsersIDs
+			}
+		}
+
+		return updatedRow, err
+	})
+}
+
+func GetRows(ctx context.Context, columnID *string) ([]types.KanbanRow, error) {
+	if columnID == nil {
+		return []types.KanbanRow{}, errors.New("columnID must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) ([]types.KanbanRow, error) {
+		qRows, err := tx.Query(ctx, `SELECT FROM "kanbanRows" WHERE "columnID"=$1 ORDER BY "order" ASC`, columnID)
+		if err != nil {
+			return []types.KanbanRow{}, err
+		}
+		defer qRows.Close()
+
+		var rows []types.KanbanRow
+		for qRows.Next() {
+			var row types.KanbanRow
+			var labelID *string
+
+			err = qRows.Scan(&row.ID, &row.ColumnID, &row.Name, &row.Description, &row.Order, &row.Priority, &labelID, &row.CreatedAt, &row.UpdatedAt, &row.DueDate)
+			if err != nil {
+				return []types.KanbanRow{}, err
+			}
+
+			if labelID != nil {
+				label, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM kanbanRowLabels WHERE id = $1`, labelID)
+				if err != nil {
+					return []types.KanbanRow{}, err
+				}
+
+				row.Label = &label
+			}
+
+			assignees, err := queryReturningTx[types.KanbanRowAssignedUser](ctx, tx,
+				`SELECT * FROM "kanbanRowAssignees" WHERE "rowID"=$1`, row.ID)
+			if err != nil {
+				return nil, err
+			}
+			row.AssignedUsersIDs = utils.Map(func(i int, user types.KanbanRowAssignedUser) string {
+				return user.UserID
+			}, assignees)
+
+			rows = append(rows, row)
+		}
+
+		return rows, qRows.Err()
+	})
+}
+
+func DeleteRow(ctx context.Context, rowID *string) error {
+	if rowID == nil {
+		return errors.New("rowID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "kanbanRows" WHERE id = $1
+        DELETE FROM "kanbanRowAssignees" WHERE "rowID" = $1
+        `, rowID)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	return nil
 }

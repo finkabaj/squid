@@ -34,6 +34,7 @@ func GetUser(ctx context.Context, id *string, email *string) (types.User, error)
 
 func DeleteUser(ctx context.Context, id *string) (err error) {
 	_, err = queryOneReturning[types.User](ctx, `DELETE FROM "users" WHERE "id" = $1`, id)
+
 	return
 }
 

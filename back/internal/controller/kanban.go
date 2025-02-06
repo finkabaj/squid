@@ -47,6 +47,11 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 		r.With(middleware.ValidateJWT).Delete("/column/label/{label_id}", c.deleteColumnLabel)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumnLabel]()).Patch("/column/label/{label_id}", c.updateColumnLabel)
 		r.With(middleware.ValidateJWT).Get("/column/labels/{project_id}", c.getColumnLabels)
+
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanRow]()).Post("/row", c.createRow)
+		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanRow]()).Patch("/row/{row_id}", c.updateRows)
+		r.With(middleware.ValidateJWT).Delete("/row/{row_id}", c.deleteRow)
+		r.With(middleware.ValidateJWT).Get("/rows/{column_id}", c.getRows)
 	})
 
 	kanbanControllerInitialized = true
@@ -400,6 +405,111 @@ func (c *KanbanController) getColumnLabels(w http.ResponseWriter, r *http.Reques
 
 	if err := utils.MarshalBody(w, http.StatusOK, labels); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal labels")))
+		return
+	}
+}
+
+func (c *KanbanController) createRow(w http.ResponseWriter, r *http.Request) {
+	createRow, ok := middleware.JsonFromContext(r.Context()).(types.CreateKanbanRow)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get createRow from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	row, project, err := service.CreateRow(&user.ID, &createRow)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusCreated, row); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal row")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanRowCreatedEvent, "kanban column label updated", row, projectUsers)
+}
+
+func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
+	updateRow, ok := middleware.JsonFromContext(r.Context()).(types.UpdateKanbanRow)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get updateRow from context")))
+		return
+	}
+
+	rowID := chi.URLParam(r, "row_id")
+	if rowID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("row id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	row, project, err := service.UpdateRow(&user.ID, &rowID, &updateRow)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, row); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal label")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnLabelUpdatedEvent, "kanban column label updated", row, projectUsers)
+}
+
+func (c *KanbanController) deleteRow(w http.ResponseWriter, r *http.Request) {
+	user := middleware.UserFromContext(r.Context())
+
+	rowID := chi.URLParam(r, "row_id")
+	if rowID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("row id is required")))
+		return
+	}
+
+	project, err := service.DeleteRow(&user.ID, &rowID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "kanban row deleted succesfully"}); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal okResponse"))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanRowDeletedEvent, "kanban row deleted", nil, projectUsers)
+}
+
+func (c *KanbanController) getRows(w http.ResponseWriter, r *http.Request) {
+	columnID := chi.URLParam(r, "column_id")
+	if columnID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("column id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	rows, err := service.GetRows(&user.ID, &columnID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, rows); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal rows")))
 		return
 	}
 }
