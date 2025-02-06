@@ -153,7 +153,7 @@ func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProj
 		}
 	}
 
-	updatedProject, err := repository.UpdateProject(ctx, id, &project, updateProject)
+	updatedProject, err := repository.UpdateProject(ctx, id, updateProject)
 
 	if err != nil {
 		return types.Project{}, utils.NewInternalError(err)
@@ -280,7 +280,7 @@ func UpdateColumn(columnID *string, user *types.User, updateColumn *types.Update
 		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	updatedColumn, err := repository.UpdateKanbanColumn(ctx, columnID, updateColumn, column)
+	updatedColumn, err := repository.UpdateKanbanColumn(ctx, updateColumn, &column)
 
 	if err != nil {
 		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
@@ -475,4 +475,65 @@ func GetColumnLabels(userID *string, projectID *string) ([]types.KanbanColumnLab
 	}
 
 	return labels, nil
+}
+
+func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, types.Project, error) {
+	if createRow == nil || userID == nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createRow is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	column, err := repository.GetKanbanColumn(ctx, &createRow.ColumnID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanRow{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", createRow.ColumnID)))
+	} else if err != nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+
+	if err != nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(_ int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.KanbanRow{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create row"))
+	}
+
+	id := uuid.New().String()
+
+	row, err := repository.CreateKanbanRow(ctx, &id, userID, createRow)
+	if err != nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return row, project, nil
+}
+
+func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) (types.KanbanRow, types.Project, error) {
+	if updateRow == nil || userID == nil || rowID == nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or rowID or updateRow is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	row, err := repository.GetKanbanRow(ctx, rowID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanRow{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("row with id: %s not found", *rowID)))
+	} else if err != nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &row.ProjectID)
+}
+
+func DeleteRow(userID *string, rowID *string) (types.Project, error) {
+}
+
+func GetRows(userID *string, columnID *string) ([]types.KanbanRow, error) {
 }

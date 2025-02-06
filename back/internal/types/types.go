@@ -163,6 +163,7 @@ type KanbanRow struct {
 	ID               string     `json:"id"`
 	ColumnID         string     `json:"column_id"`
 	Name             string     `json:"name"`
+	Description      string     `json:"description"`
 	Order            int        `json:"order"`
 	CreatorID        string     `json:"creator_id"`
 	AssignedUsersIDs []string   `json:"assigned_users_ids"`
@@ -177,22 +178,35 @@ type KanbanRow struct {
 	Comments  *CommentSection `json:"comments,omitempty"`
 }
 
+type KanbanRowAssignedUser struct {
+	RowID  string `json:"row_id"`
+	UserID string `json:"user_id"`
+}
+
 type CreateKanbanRow struct {
 	ColumnID         string     `json:"column_id" validate:"required,uuid"`
 	Name             string     `json:"name" validate:"required,min=3,max=50"`
+	Description      string     `json:"description" validate:"required,min=0,max=200"`
 	Order            int        `json:"order" validate:"required,min=0,max=20"`
 	AssignedUsersIDs []string   `json:"assigned_users_ids" validate:"required,dive,uuid"`
 	Priority         *Priority  `json:"priority" validate:"required,min=3,max=20"`
 	DueDate          *time.Time `json:"due_date" validate:"required,date"`
+
+	LabelID *string `json:"label_id,omitempty" validate:"omitempty,uuid"`
 }
 
 type UpdateKanbanRow struct {
+	ProjectID        string     `json:"project_id" validate:"required,uuid"`
 	ColumnID         string     `json:"column_id" validate:"required,uuid"`
-	Name             string     `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Order            int        `json:"order,omitempty" validate:"omitempty,min=0,max=20"`
-	AssignedUsersIDs []string   `json:"assigned_users_ids,omitempty" validate:"omitempty,dive,uuid"`
+	Name             *string    `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Description      *string    `json:"description,omitempty" validate:"omitempty,min=3,max=200"`
+	Order            *int       `json:"order,omitempty" validate:"omitempty,min=0,max=20"`
+	AssignedUsersIDs *[]string  `json:"assigned_users_ids,omitempty" validate:"omitempty,dive,uuid"`
 	Priority         *Priority  `json:"priority,omitempty" validate:"omitempty,min=3,max=20"`
 	DueDate          *time.Time `json:"due_date,omitempty" validate:"omitempty,date"`
+
+	LabelID     *string `json:"label_id,omitempty" validate:"omitempty,uuid"`
+	DeleteLabel *bool   `json:"delete_label,omitempty" validate:"omitempty,oneof=true false"`
 }
 
 type KanbanRowLabel struct {
@@ -240,12 +254,14 @@ type Point struct {
 }
 
 type CreatePoint struct {
+	ProjectID   string `json:"project_id" validate:"required,uuid"`
 	CheckListID string `json:"check_list_id" validate:"required,uuid"`
 	Name        string `json:"name" validate:"required,min=3,max=50"`
 	Description string `json:"description" validate:"required,min=3,max=100"`
 }
 
 type UpdatePoint struct {
+	ProjectID   string `json:"project_id" validate:"required,uuid"`
 	CheckListID string `json:"check_list_id" validate:"required,uuid"`
 	Name        string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
 	Description string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
@@ -268,6 +284,7 @@ type Comment struct {
 }
 
 type CreateComment struct {
+	ProjectID        string `json:"project_id" validate:"required,uuid"`
 	CommentSectionID string `json:"comment_section_id" validate:"required,uuid"`
 	Text             string `json:"text" validate:"required,min=3,max=200"`
 }
