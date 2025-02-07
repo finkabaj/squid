@@ -2,12 +2,13 @@ package middleware
 
 import (
 	"context"
-	"github.com/pkg/errors"
 	"io"
 	"net/http"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/finkabaj/squid/back/internal/utils"
 	"github.com/go-playground/validator/v10"
@@ -36,12 +37,23 @@ func validateDateOfBirth(fl validator.FieldLevel) bool {
 	return dob.Before(minAge)
 }
 
+func validateDueDate(fl validator.FieldLevel) bool {
+	dueDate, ok := fl.Field().Interface().(time.Time)
+	if !ok {
+		return false
+	}
+
+	now := time.Now()
+	return dueDate.After(now)
+}
+
 var validate *validator.Validate
 
 func init() {
 	validate = validator.New()
 
 	validate.RegisterValidation("date_of_birth", validateDateOfBirth)
+	validate.RegisterValidation("due_date", validateDueDate)
 
 	validate.RegisterTagNameFunc(func(f reflect.StructField) string {
 		name := strings.SplitN(f.Tag.Get("json"), ",", 2)[0]
