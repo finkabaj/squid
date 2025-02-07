@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/finkabaj/squid/back/internal/logger"
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pkg/errors"
@@ -25,10 +26,12 @@ func bulkInsert(ctx context.Context, tx pgx.Tx, tableName string, columns []stri
 		pgx.CopyFromRows(rows),
 	)
 	if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msgf("error copying rows to %s", tableName)
 		return errors.Wrapf(err, "error copying rows to %s", tableName)
 	}
 
 	if int(copyCount) != len(rows) {
+		logger.Logger.Error().Stack().Msgf("expected to copy %d rows, got %d", len(rows), copyCount)
 		return errors.Errorf("expected to copy %d rows, got %d", len(rows), copyCount)
 	}
 
@@ -56,6 +59,7 @@ func queryOneReturning[T any](ctx context.Context, query string, args ...interfa
 	var result T
 	row, err := pool.Query(ctx, query, args...)
 	if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error executing query")
 		return result, errors.Wrap(err, "error executing query")
 	}
 	defer row.Close()
@@ -64,16 +68,18 @@ func queryOneReturning[T any](ctx context.Context, query string, args ...interfa
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, err
 	} else if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error collecting query")
 		return result, errors.Wrap(err, "error collecting row")
 	}
 
-	return result, nil
+	return result, row.Err()
 }
 
 func queryReturning[T any](ctx context.Context, query string, args ...interface{}) ([]T, error) {
 	var result []T
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error executing query")
 		return result, errors.Wrap(err, "error executing query")
 	}
 	defer rows.Close()
@@ -82,16 +88,18 @@ func queryReturning[T any](ctx context.Context, query string, args ...interface{
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, err
 	} else if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error collecting query")
 		return result, errors.Wrap(err, "error collecting row")
 	}
 
-	return result, nil
+	return result, rows.Err()
 }
 
 func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
 	var result T
 	row, err := tx.Query(ctx, query, args...)
 	if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error executing query")
 		return result, errors.Wrap(err, "error executing query")
 	}
 	defer row.Close()
@@ -100,15 +108,17 @@ func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, ar
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, err
 	} else if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error collecting query")
 		return result, errors.Wrap(err, "error collecting row")
 	}
-	return result, nil
+	return result, row.Err()
 }
 
 func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) ([]T, error) {
 	var result []T
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error executing query")
 		return result, errors.Wrap(err, "error executing query")
 	}
 	defer rows.Close()
@@ -117,9 +127,10 @@ func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return result, err
 	} else if err != nil {
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("error collecting query")
 		return result, errors.Wrap(err, "error collecting row")
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 func setup() (err error) {
