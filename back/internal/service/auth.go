@@ -62,7 +62,7 @@ func Register(user *types.RegisterUser) (types.AuthUser, error) {
 		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
-	jwtPair, err := utils.CreateJWTPair(&newUser, &refreshToken)
+	jwtPair, jwtExp, err := utils.CreateJWTPair(&newUser, &refreshToken)
 
 	if err != nil {
 		return types.AuthUser{}, utils.NewInternalError(err)
@@ -71,8 +71,10 @@ func Register(user *types.RegisterUser) (types.AuthUser, error) {
 	return types.AuthUser{
 		User: newUser,
 		TokenPair: types.TokenPair{
-			AccessToken:  jwtPair["accessToken"],
-			RefreshToken: jwtPair["refreshToken"],
+			AccessToken:        jwtPair["accessToken"],
+			AccessTokenExpiry:  jwtExp["accessToken"],
+			RefreshToken:       jwtPair["refreshToken"],
+			RefreshTokenExpiry: jwtExp["refreshToken"],
 		},
 	}, nil
 }
@@ -125,7 +127,7 @@ func Login(login *types.Login) (types.AuthUser, error) {
 		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
-	jwtPair, err := utils.CreateJWTPair(&user, &refreshToken)
+	jwtPair, jwtExp, err := utils.CreateJWTPair(&user, &refreshToken)
 
 	if err != nil {
 		return types.AuthUser{}, utils.NewInternalError(err)
@@ -134,8 +136,10 @@ func Login(login *types.Login) (types.AuthUser, error) {
 	return types.AuthUser{
 		User: user,
 		TokenPair: types.TokenPair{
-			AccessToken:  jwtPair["accessToken"],
-			RefreshToken: jwtPair["refreshToken"],
+			AccessToken:        jwtPair["accessToken"],
+			AccessTokenExpiry:  jwtExp["accessToken"],
+			RefreshToken:       jwtPair["refreshToken"],
+			RefreshTokenExpiry: jwtExp["refreshToken"],
 		},
 	}, nil
 }
@@ -218,15 +222,17 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 		return types.TokenPair{}, utils.NewInternalError(err)
 	}
 
-	jwtPair, err := utils.CreateJWTPair(&user, &newRefreshToken)
+	jwtPair, jwtExp, err := utils.CreateJWTPair(&user, &newRefreshToken)
 
 	if err != nil {
 		return types.TokenPair{}, utils.NewInternalError(err)
 	}
 
 	return types.TokenPair{
-		AccessToken:  jwtPair["accessToken"],
-		RefreshToken: jwtPair["refreshToken"],
+		AccessToken:        jwtPair["accessToken"],
+		AccessTokenExpiry:  jwtExp["accessToken"],
+		RefreshToken:       jwtPair["refreshToken"],
+		RefreshTokenExpiry: jwtExp["refreshToken"],
 	}, nil
 }
 
