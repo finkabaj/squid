@@ -58,7 +58,15 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(cors.Default().Handler)
+	corsMiddleware := cors.New(cors.Options{
+		// TODO: change when in production
+		AllowedOrigins:   []string{"http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	})
+	r.Use(corsMiddleware.Handler)
 
 	wsServer := websocket.NewServer()
 
