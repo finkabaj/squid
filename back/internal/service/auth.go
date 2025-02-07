@@ -154,9 +154,9 @@ func invalidRefreshToken(err error) utils.AppError {
 	}
 }
 
-func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
+func RefreshToken(refreshTokenStr *string) (types.AuthUser, error) {
 	if refreshTokenStr == nil {
-		return types.TokenPair{}, utils.NewBadRequestError(errors.New("refresh token is nil"))
+		return types.AuthUser{}, utils.NewBadRequestError(errors.New("refresh token is nil"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -171,46 +171,46 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 	})
 
 	if err != nil {
-		return types.TokenPair{}, invalidRefreshToken(err)
+		return types.AuthUser{}, invalidRefreshToken(err)
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
 
 	if !ok || !token.Valid {
-		return types.TokenPair{}, invalidRefreshToken(err)
+		return types.AuthUser{}, invalidRefreshToken(err)
 	}
 
 	exp, ok := claims["expires_at"].(float64)
 
 	if !ok || time.Now().Unix() > int64(exp) {
-		return types.TokenPair{}, invalidRefreshToken(errors.New("refresh token expired"))
+		return types.AuthUser{}, invalidRefreshToken(errors.New("refresh token expired"))
 	}
 
 	id, ok := claims["id"].(string)
 
 	if !ok {
-		return types.TokenPair{}, invalidRefreshToken(err)
+		return types.AuthUser{}, invalidRefreshToken(err)
 	}
 
 	refreshToken, err := repository.GetRefreshToken(ctx, &id)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.TokenPair{}, invalidRefreshToken(err)
+		return types.AuthUser{}, invalidRefreshToken(err)
 	} else if err != nil {
-		return types.TokenPair{}, utils.NewInternalError(err)
+		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
 	user, err := repository.GetUser(ctx, &refreshToken.UserID, nil)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.TokenPair{}, invalidRefreshToken(err)
+		return types.AuthUser{}, invalidRefreshToken(err)
 	} else if err != nil {
-		return types.TokenPair{}, utils.NewInternalError(err)
+		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
 	err = repository.DeleteRefreshToken(ctx, &refreshToken.UserID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return types.TokenPair{}, utils.NewInternalError(err)
+		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
 	newTokenID := uuid.New().String()
@@ -219,20 +219,23 @@ func RefreshToken(refreshTokenStr *string) (types.TokenPair, error) {
 	newRefreshToken, err := repository.CreateRefreshToken(ctx, &newTokenID, &user.ID, &expAt)
 
 	if err != nil {
-		return types.TokenPair{}, utils.NewInternalError(err)
+		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
 	jwtPair, jwtExp, err := utils.CreateJWTPair(&user, &newRefreshToken)
 
 	if err != nil {
-		return types.TokenPair{}, utils.NewInternalError(err)
+		return types.AuthUser{}, utils.NewInternalError(err)
 	}
 
-	return types.TokenPair{
-		AccessToken:        jwtPair["accessToken"],
-		AccessTokenExpiry:  jwtExp["accessToken"],
-		RefreshToken:       jwtPair["refreshToken"],
-		RefreshTokenExpiry: jwtExp["refreshToken"],
+	return types.AuthUser{
+		User: user,
+		TokenPair: types.TokenPair{
+			AccessToken:        jwtPair["accessToken"],
+			AccessTokenExpiry:  jwtExp["accessToken"],
+			RefreshToken:       jwtPair["refreshToken"],
+			RefreshTokenExpiry: jwtExp["refreshToken"],
+		},
 	}, nil
 }
 

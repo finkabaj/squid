@@ -31,6 +31,7 @@ func (c *AuthController) RegisterAuthRoutes(r *chi.Mux) {
 		r.With(middleware.ValidateJson[types.Login]()).Post("/login", c.login)
 		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", c.register)
 		r.Post("/refresh", c.refreshToken)
+		r.Post("/logout", c.logout)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateUser]()).Patch("/user", c.updateUser)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdatePassword]()).Patch("/password", c.updatePassword)
 		r.With(middleware.ValidateJWT).Get("/user/{id}", c.getUser)
@@ -146,17 +147,40 @@ func (c *AuthController) refreshToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := service.RefreshToken(&cookie.Value)
+	auth, err := service.RefreshToken(&cookie.Value)
 
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	utils.SetTokenCookie(w, "access_token", tokens.AccessToken, tokens.AccessTokenExpiry)
-	utils.SetTokenCookie(w, "refresh_token", tokens.RefreshToken, tokens.RefreshTokenExpiry)
+	utils.SetTokenCookie(w, "access_token", auth.TokenPair.AccessToken, auth.TokenPair.AccessTokenExpiry)
+	utils.SetTokenCookie(w, "refresh_token", auth.TokenPair.RefreshToken, auth.TokenPair.RefreshTokenExpiry)
 
-	if err = utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "Tokens refreshed successfully"}); err != nil {
+	if err = utils.MarshalBody(w, http.StatusOK, auth.User); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
 	}
+}
+
+func (c *AuthController) logout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
+
+	w.WriteHeader(http.StatusOK)
 }
