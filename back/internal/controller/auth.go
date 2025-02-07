@@ -30,7 +30,7 @@ func (c *AuthController) RegisterAuthRoutes(r *chi.Mux) {
 	r.Route("/auth", func(r chi.Router) {
 		r.With(middleware.ValidateJson[types.Login]()).Post("/login", c.login)
 		r.With(middleware.ValidateJson[types.RegisterUser]()).Post("/register", c.register)
-		r.With(middleware.ValidateJson[types.RefreshTokenRequest]()).Post("/refresh", c.refreshToken)
+		r.Post("/refresh", c.refreshToken)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateUser]()).Patch("/user", c.updateUser)
 		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdatePassword]()).Patch("/password", c.updatePassword)
 		r.With(middleware.ValidateJWT).Get("/user/{id}", c.getUser)
@@ -54,7 +54,10 @@ func (c *AuthController) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusCreated, user); err != nil {
+	utils.SetTokenCookie(w, "access_token", user.TokenPair.AccessToken, user.TokenPair.AccessTokenExpiry)
+	utils.SetTokenCookie(w, "refresh_token", user.TokenPair.RefreshToken, user.TokenPair.RefreshTokenExpiry)
+
+	if err = utils.MarshalBody(w, http.StatusCreated, user.User); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
 	}
 }
@@ -74,7 +77,10 @@ func (c *AuthController) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, user); err != nil {
+	utils.SetTokenCookie(w, "access_token", user.TokenPair.AccessToken, user.TokenPair.AccessTokenExpiry)
+	utils.SetTokenCookie(w, "refresh_token", user.TokenPair.RefreshToken, user.TokenPair.RefreshTokenExpiry)
+
+	if err = utils.MarshalBody(w, http.StatusOK, user.User); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
 	}
 }
@@ -134,21 +140,23 @@ func (c *AuthController) updatePassword(w http.ResponseWriter, r *http.Request) 
 }
 
 func (c *AuthController) refreshToken(w http.ResponseWriter, r *http.Request) {
-	refreshToken, ok := middleware.JsonFromContext(r.Context()).(types.RefreshTokenRequest)
-
-	if !ok {
-		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get refresh token from context")))
+	cookie, err := r.Cookie("refresh_token")
+	if err != nil {
+		utils.HandleError(w, utils.NewUnauthorizedError(errors.New("No refresh token cookie")))
 		return
 	}
 
-	tokens, err := service.RefreshToken(&refreshToken.RefreshToken)
+	tokens, err := service.RefreshToken(&cookie.Value)
 
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, tokens); err != nil {
+	utils.SetTokenCookie(w, "access_token", tokens.AccessToken, tokens.AccessTokenExpiry)
+	utils.SetTokenCookie(w, "refresh_token", tokens.RefreshToken, tokens.RefreshTokenExpiry)
+
+	if err = utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "Tokens refreshed successfully"}); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal user"))
 	}
 }

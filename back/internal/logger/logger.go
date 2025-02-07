@@ -1,11 +1,13 @@
 package logger
 
 import (
-	"github.com/finkabaj/squid/back/internal/config"
 	"io"
 	"os"
 
+	"github.com/finkabaj/squid/back/internal/config"
+
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/pkgerrors"
 )
 
 var Logger zerolog.Logger
@@ -17,6 +19,8 @@ func InitLogger(fs *os.File) {
 	}
 
 	var target io.Writer
+
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
 	if config.Data.Env == "development" {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)

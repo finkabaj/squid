@@ -24,7 +24,7 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 		var newProject types.Project
 		err := row.Scan(&newProject.ID, &newProject.CreatorID, &newProject.Name, &newProject.Description, &newProject.CreatedAt, &newProject.UpdatedAt)
 		if err != nil {
-			return types.Project{}, err
+			return types.Project{}, errors.WithStack(err)
 		}
 
 		if len(project.AdminIDs) > 0 {
@@ -37,7 +37,7 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 			}
 
 			if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
-				return types.Project{}, err
+				return types.Project{}, errors.WithStack(err)
 			}
 
 			newProject.AdminIDs = project.AdminIDs
@@ -53,13 +53,13 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 			}
 
 			if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
-				return types.Project{}, err
+				return types.Project{}, errors.WithStack(err)
 			}
 
 			newProject.MembersIDs = project.MembersIDs
 		}
 
-		return newProject, err
+		return newProject, nil
 	})
 }
 
@@ -82,7 +82,7 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 		admins, err := queryReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE "projectID" = $1`, id)
 
 		if err != nil {
-			return types.Project{}, err
+			return types.Project{}, errors.WithStack(err)
 		}
 
 		project.AdminIDs = utils.Map(func(i int, admin types.ProjectAdmin) string {
@@ -92,18 +92,18 @@ func GetProject(ctx context.Context, id *string) (types.Project, error) {
 		members, err := queryReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE "projectID" = $1`, id)
 
 		if err != nil {
-			return types.Project{}, err
+			return types.Project{}, errors.WithStack(err)
 		}
 
 		project.MembersIDs = utils.Map(func(i int, member types.ProjectMember) string {
 			return member.UserID
 		}, members)
 
-		return project, err
+		return project, nil
 	})
 }
 
-func UpdateProject(ctx context.Context, id *string, project *types.Project, updateProject *types.UpdateProject) (types.Project, error) {
+func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateProject) (types.Project, error) {
 	if id == nil || updateProject == nil {
 		return types.Project{}, errors.New("All arguments must not be nil")
 	}
@@ -119,14 +119,14 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 		var project types.Project
 		err := row.Scan(&project.ID, &project.CreatorID, &project.Name, &project.Description, &project.CreatedAt, &project.UpdatedAt)
 		if err != nil {
-			return types.Project{}, err
+			return types.Project{}, errors.WithStack(err)
 		}
 
 		if updateProject.AdminIDs != nil {
 			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectAdmins" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return types.Project{}, err
+				return types.Project{}, errors.WithStack(err)
 			}
 
 			if len(*updateProject.AdminIDs) > 0 {
@@ -139,7 +139,7 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 				}
 
 				if err = bulkInsert(ctx, tx, "projectAdmins", []string{"projectID", "userID"}, adminRows); err != nil {
-					return types.Project{}, err
+					return types.Project{}, errors.WithStack(err)
 				}
 
 				project.AdminIDs = *updateProject.AdminIDs
@@ -150,7 +150,7 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectMembers" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return types.Project{}, err
+				return types.Project{}, errors.WithStack(err)
 			}
 
 			if len(*updateProject.MembersIDs) > 0 {
@@ -163,14 +163,14 @@ func UpdateProject(ctx context.Context, id *string, project *types.Project, upda
 				}
 
 				if err = bulkInsert(ctx, tx, "projectMembers", []string{"projectID", "userID"}, memberRows); err != nil {
-					return types.Project{}, err
+					return types.Project{}, errors.WithStack(err)
 				}
 
 				project.MembersIDs = *updateProject.MembersIDs
 			}
 		}
 
-		return project, err
+		return project, nil
 	})
 }
 
@@ -185,7 +185,7 @@ func DeleteProject(ctx context.Context, userID *string, projectID *string) error
     		DELETE FROM "projects" WHERE "id" = $1;
 		`, projectID)
 
-	return err
+	return errors.WithStack(err)
 }
 
 // TODO: reorder other columns on creation
@@ -205,20 +205,20 @@ func CreateKanbanColumn(ctx context.Context, id *string, projectID *string, crea
 		var labelID *string
 		err := row.Scan(&newColumn.ID, &newColumn.ProjectID, &newColumn.Name, &newColumn.Order, &labelID)
 		if err != nil {
-			return types.KanbanColumn{}, err
+			return types.KanbanColumn{}, errors.WithStack(err)
 		}
 
 		if labelID != nil {
 			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
 
 			if err != nil {
-				return types.KanbanColumn{}, err
+				return types.KanbanColumn{}, errors.WithStack(err)
 			}
 
 			newColumn.Label = &label
 		}
 
-		return newColumn, err
+		return newColumn, errors.WithStack(err)
 	})
 }
 
@@ -234,7 +234,7 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 		var labelID *string
 		err := row.Scan(&column.ID, &column.ProjectID, &column.Name, &column.Order, &labelID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.KanbanColumn{}, err
+			return types.KanbanColumn{}, errors.WithStack(err)
 		} else if err != nil {
 			return types.KanbanColumn{}, errors.Wrap(err, "error getting column")
 		}
@@ -243,7 +243,7 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
 
 			if err != nil {
-				return types.KanbanColumn{}, err
+				return types.KanbanColumn{}, errors.WithStack(err)
 			}
 
 			column.Label = &label
@@ -254,8 +254,8 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 }
 
 // TODO: reorder other columns on update
-func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.UpdateKanbanColumn, column types.KanbanColumn) (types.KanbanColumn, error) {
-	if id == nil || updateColumn == nil {
+func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanColumn, column *types.KanbanColumn) (types.KanbanColumn, error) {
+	if column == nil || updateColumn == nil {
 		return types.KanbanColumn{}, errors.New("all arguments must not be nil")
 	}
 
@@ -273,13 +273,13 @@ func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.Upd
 			updateColumn.Name,
 			updateColumn.Order,
 			newLabelID,
-			id)
+			column.ID)
 
 		var updatedColumn types.KanbanColumn
 		var labelID *string
 		err := row.Scan(&updatedColumn.ID, &updatedColumn.ProjectID, &updatedColumn.Name, &updatedColumn.Order, &labelID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.KanbanColumn{}, err
+			return types.KanbanColumn{}, errors.WithStack(err)
 		} else if err != nil {
 			return types.KanbanColumn{}, errors.Wrap(err, "error getting column")
 		}
@@ -288,7 +288,7 @@ func UpdateKanbanColumn(ctx context.Context, id *string, updateColumn *types.Upd
 			label, err := queryOneReturning[types.KanbanColumnLabel](ctx, `SELECT * FROM kanbanColumnLabels WHERE id = $1`, labelID)
 
 			if err != nil {
-				return types.KanbanColumn{}, err
+				return types.KanbanColumn{}, errors.WithStack(err)
 			}
 
 			updatedColumn.Label = &label
@@ -306,7 +306,7 @@ func DeleteKanbanColumn(ctx context.Context, id *string) error {
 
 	_, err := queryOneReturning[any](ctx, `DELETE FROM "kanbanColumns" WHERE id = $1`, id)
 
-	return err
+	return errors.WithStack(err)
 }
 
 func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, error) {
@@ -330,7 +330,7 @@ func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, 
 			ORDER BY p."createdAt" DESC;
 		`, userID)
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		defer rows.Close()
 
@@ -346,13 +346,13 @@ func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, 
 				&project.UpdatedAt,
 			)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 
 			admins, err := queryReturning[types.ProjectAdmin](ctx,
 				`SELECT * FROM "projectAdmins" WHERE "projectID" = $1`, project.ID)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 			project.AdminIDs = utils.Map(func(i int, admin types.ProjectAdmin) string {
 				return admin.UserID
@@ -361,7 +361,7 @@ func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, 
 			members, err := queryReturning[types.ProjectMember](ctx,
 				`SELECT * FROM "projectMembers" WHERE "projectID" = $1`, project.ID)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 			project.MembersIDs = utils.Map(func(i int, member types.ProjectMember) string {
 				return member.UserID
@@ -370,7 +370,7 @@ func GetProjectsByUserID(ctx context.Context, userID *string) ([]types.Project, 
 			projects = append(projects, project)
 		}
 
-		return projects, rows.Err()
+		return projects, errors.WithStack(rows.Err())
 	})
 }
 
@@ -385,7 +385,7 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
             `, projectID)
 
 		if err != nil {
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		defer rows.Close()
 
@@ -401,13 +401,13 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 				&labelID,
 			)
 			if err != nil {
-				return nil, err
+				return nil, errors.WithStack(err)
 			}
 
 			if labelID != nil {
 				label, err := queryOneReturningTx[types.KanbanColumnLabel](ctx, tx, `SELECT * FROM "kanbanColumnLabels" WHERE "id" = $1`, labelID)
 				if err != nil {
-					return nil, err
+					return nil, errors.WithStack(err)
 				}
 				column.Label = &label
 			}
@@ -415,7 +415,7 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 			columns = append(columns, column)
 		}
 
-		return columns, nil
+		return columns, errors.WithStack(rows.Err())
 	})
 }
 
@@ -450,7 +450,7 @@ func DeleteKanbanColumnLabel(ctx context.Context, id *string) error {
     `, id)
 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return err
+		return errors.WithStack(err)
 	}
 
 	return nil
@@ -477,4 +477,241 @@ func GetKanbanColumnLabels(ctx context.Context, projectID *string) ([]types.Kanb
 	return queryReturning[types.KanbanColumnLabel](ctx, `
         SELECT * FROM "kanbanColumnLabels" WHERE "projectID" = $1
     `, projectID)
+}
+
+func CreateKanbanRow(ctx context.Context, id *string, userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, error) {
+	if id == nil || userID == nil || createRow == nil {
+		return types.KanbanRow{}, errors.New("id, userID and createRow must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanRow, error) {
+		row := tx.QueryRow(ctx, `
+            INSERT INTO "kanbanRows" 
+            ("id", "columnID", "name", "description", "order", "creatorID", "priority", "labelID", "dueDate") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING *
+        `, id, createRow.ColumnID, createRow.Name, createRow.Description, createRow.Order, userID, createRow.Priority, createRow.LabelID, createRow.DueDate)
+
+		var kanbanRow types.KanbanRow
+		var labelID *string
+
+		if err := row.Scan(&kanbanRow.ID,
+			&kanbanRow.ColumnID, &kanbanRow.Name,
+			&kanbanRow.Description, &kanbanRow.Order,
+			&kanbanRow.CreatorID, &kanbanRow.Priority,
+			&labelID, &kanbanRow.CreatedAt,
+			&kanbanRow.UpdatedAt, &kanbanRow.DueDate); err != nil {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		if len(createRow.AssignedUsersIDs) > 0 {
+			assignee := make([][]interface{}, len(createRow.AssignedUsersIDs))
+
+			for i, userID := range createRow.AssignedUsersIDs {
+				assignee[i] = []interface{}{id, userID}
+			}
+
+			if err := bulkInsert(ctx, tx, "kanbanRowAssignees", []string{"rowID", "userID"}, assignee); err != nil {
+				return types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			kanbanRow.AssignedUsersIDs = createRow.AssignedUsersIDs
+		}
+
+		if labelID != nil {
+			rowLabel, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx, `SELECT * FROM "kanbanRowLabels" WHERE "id" = $1`, labelID)
+
+			if err != nil {
+				return types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			kanbanRow.Label = &rowLabel
+		}
+
+		return kanbanRow, nil
+	})
+}
+
+func UpdateKanbanRow(ctx context.Context, updateRow *types.UpdateKanbanRow, row *types.KanbanRow) (types.KanbanRow, error) {
+	if row == nil || updateRow == nil {
+		return types.KanbanRow{}, errors.New("row and updateRow must not be nil")
+	}
+
+	var newLabelID *string
+	if updateRow.LabelID != nil {
+		newLabelID = updateRow.LabelID
+	} else if updateRow.DeleteLabel != nil {
+		newLabelID = nil
+	} else if row.Label != nil {
+		newLabelID = &row.Label.ID
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanRow, error) {
+		qRow := tx.QueryRow(ctx,
+			`UPDATE "kanbanRows"
+                SET "name" = coalesce($1, "name"),
+                    "description" = coalesce($2, "description"),
+                    "order" = coalesce($3, "order"),
+                    "priority" = coalesce($4, "priority"),
+                    "labelID" = coalesce($5, "labelID"),
+                    "dueDate" = coalesce($6, "dueDate")
+                WHERE "id" = $7
+                RETURNING *
+            `, updateRow.Name, updateRow.Description, updateRow.Order, updateRow.Priority, newLabelID, updateRow.DueDate, row.ID)
+
+		var updatedRow types.KanbanRow
+		var labelID *string
+		err := qRow.Scan(&updatedRow.ID, &updatedRow.ColumnID,
+			&updatedRow.Name, &updatedRow.Description,
+			&updatedRow.Order, &updatedRow.CreatorID, &updatedRow.Priority,
+			&labelID, &updatedRow.CreatedAt,
+			&updatedRow.UpdatedAt, &updatedRow.DueDate,
+		)
+
+		if err != nil {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		if updateRow.AssignedUsersIDs != nil {
+			_, err = tx.Exec(ctx, `DELETE FROM "kanbanRowAssignees" WHERE "rowID" = $1`, row.ID)
+			if err != nil {
+				return types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			if len(*updateRow.AssignedUsersIDs) > 0 {
+				for _, userID := range *updateRow.AssignedUsersIDs {
+					_, err = tx.Exec(ctx,
+						`INSERT INTO "kanbanRowAssignees" ("rowID", "userID") VALUES ($1, $2)`,
+						row.ID, userID)
+					if err != nil {
+						return types.KanbanRow{}, errors.WithStack(err)
+					}
+				}
+				updatedRow.AssignedUsersIDs = *updateRow.AssignedUsersIDs
+			}
+		}
+
+		if labelID != nil {
+			label, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx,
+				`SELECT * FROM "kanbanRowLabels" WHERE "id" = $1`, labelID)
+			if err != nil {
+				return types.KanbanRow{}, errors.WithStack(err)
+			}
+			updatedRow.Label = &label
+		}
+
+		return updatedRow, nil
+	})
+}
+
+func GetRows(ctx context.Context, columnID *string) ([]types.KanbanRow, error) {
+	if columnID == nil {
+		return []types.KanbanRow{}, errors.New("columnID must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) ([]types.KanbanRow, error) {
+		qRows, err := tx.Query(ctx, `
+            SELECT "id", "columnID", "name", "description", "order", 
+                   "creatorID", "priority", "labelID", "createdAt", 
+                   "updatedAt", "dueDate"
+            FROM "kanbanRows"
+            WHERE "columnID"=$1 
+            ORDER BY "order" ASC
+        `, columnID)
+		if err != nil {
+			return []types.KanbanRow{}, errors.WithStack(err)
+		}
+		defer qRows.Close()
+
+		var rows []types.KanbanRow
+		for qRows.Next() {
+			var row types.KanbanRow
+			var labelID *string
+
+			err = qRows.Scan(&row.ID, &row.ColumnID, &row.Name, &row.Description, &row.Order, &row.CreatorID, &row.Priority, &labelID, &row.CreatedAt, &row.UpdatedAt, &row.DueDate)
+			if err != nil {
+				return []types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			if labelID != nil {
+				label, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx, `SELECT * FROM kanbanRowLabels WHERE id = $1`, labelID)
+				if err != nil {
+					return []types.KanbanRow{}, errors.WithStack(err)
+				}
+
+				row.Label = &label
+			}
+
+			assignees, err := queryReturning[types.KanbanRowAssignedUser](ctx,
+				`SELECT * FROM "kanbanRowAssignees" WHERE "rowID"=$1`, row.ID)
+			if err != nil {
+				return nil, errors.WithStack(err)
+			}
+			row.AssignedUsersIDs = utils.Map(func(_ int, user types.KanbanRowAssignedUser) string {
+				return user.UserID
+			}, assignees)
+
+			rows = append(rows, row)
+		}
+
+		if err = qRows.Err(); err != nil {
+			return []types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		return rows, nil
+	})
+}
+
+func DeleteRow(ctx context.Context, rowID *string) error {
+	if rowID == nil {
+		return errors.New("rowID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "kanbanRows" WHERE "id"=$1
+        `, rowID)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
+	if rowID == nil {
+		return types.KanbanRow{}, errors.New("rowID must not be nil")
+	}
+
+	return withTx(ctx, func(tx pgx.Tx) (types.KanbanRow, error) {
+		qRow := tx.QueryRow(ctx, `SELECT * FROM "kanbanRows" WHERE id = $1`, rowID)
+
+		var row types.KanbanRow
+		var labelID *string
+
+		err := qRow.Scan(&row.ID, &row.ColumnID, &row.Name, &row.Description, &row.Order, &row.CreatorID, &row.Priority, &labelID, &row.CreatedAt, &row.UpdatedAt, &row.DueDate)
+		if err != nil {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		if labelID != nil {
+			label, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM kanbanRowLabels WHERE id = $1`, labelID)
+			if err != nil {
+				return types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			row.Label = &label
+		}
+
+		assignees, err := queryReturningTx[types.KanbanRowAssignedUser](ctx, tx,
+			`SELECT * FROM "kanbanRowAssignees" WHERE "rowID"=$1`, row.ID)
+		if err != nil {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+		row.AssignedUsersIDs = utils.Map(func(_ int, user types.KanbanRowAssignedUser) string {
+			return user.UserID
+		}, assignees)
+
+		return row, nil
+	})
 }

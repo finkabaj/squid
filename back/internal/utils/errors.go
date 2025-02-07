@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/finkabaj/squid/back/internal/logger"
+	"github.com/pkg/errors"
 )
 
 type ErrorType struct {
@@ -58,28 +59,28 @@ func NewValidationError(fields map[string]string) error {
 func NewBadRequestError(err error) error {
 	return AppError{
 		Type:          ErrorTypeBadRequest,
-		OriginalError: err,
+		OriginalError: errors.WithStack(err),
 	}
 }
 
 func NewInternalError(err error) error {
 	return AppError{
 		Type:          ErrorTypeInternal,
-		OriginalError: err,
+		OriginalError: errors.WithStack(err),
 	}
 }
 
 func NewUnauthorizedError(err error) error {
 	return AppError{
 		Type:          ErrorTypeUnauthorized,
-		OriginalError: err,
+		OriginalError: errors.WithStack(err),
 	}
 }
 
 func NewNotFoundError(err error) error {
 	return AppError{
 		Type:          ErrorTypeNotFound,
-		OriginalError: err,
+		OriginalError: errors.WithStack(err),
 	}
 }
 
@@ -96,20 +97,37 @@ func HandleError(w http.ResponseWriter, err error) {
 
 	switch e := err.(type) {
 	case AppError:
+		errMsg := e.Error()
+		if e.Type == ErrorTypeInternal {
+			errMsg = "Internal server error"
+		}
 		response = ErrorResponse{
-			Error:   e.Error(),
+			Error:   errMsg,
 			Message: e.Type.Message,
 			Status:  e.Type.Status,
 			Fields:  e.Fields,
 		}
-		logger.Logger.Debug().Err(e.OriginalError).Stack()
+		if e.Type == ErrorTypeInternal {
+			if stackTracer, ok := e.OriginalError.(interface{ StackTrace() errors.StackTrace }); ok {
+				logger.Logger.Debug().
+					Stack().
+					Err(e.OriginalError).
+					Interface("stack", stackTracer.StackTrace()).
+					Msg("Application error occurred")
+			} else {
+				logger.Logger.Debug().
+					Stack().
+					Err(errors.WithStack(e.OriginalError)).
+					Msg("Application error occurred (no stack trace)")
+			}
+		}
 	default:
 		response = ErrorResponse{
 			Error:   "internal server error",
 			Message: ErrorTypeInternal.Message,
 			Status:  http.StatusInternalServerError,
 		}
-		logger.Logger.Error().Err(err).Stack().Msg("Unexpected error")
+		logger.Logger.Error().Stack().Err(errors.WithStack(err)).Msg("Unexpected error")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
