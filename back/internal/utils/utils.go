@@ -78,7 +78,7 @@ func CheckPasswordHash(password, hash *string) bool {
 	return err == nil
 }
 
-func CreateJWTRefresh(refreshToken *types.RefreshToken) (string, error) {
+func CreateJWTRefresh(refreshToken *types.RefreshToken) (string, time.Time, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":         refreshToken.ID,
 		"user_id":    refreshToken.UserID,
@@ -89,50 +89,54 @@ func CreateJWTRefresh(refreshToken *types.RefreshToken) (string, error) {
 	tokenStr, err := token.SignedString(config.Data.JWTSecret)
 
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 
-	return tokenStr, nil
+	return tokenStr, refreshToken.ExpiresAt, nil
 }
 
-func CreateJWT(user *types.User) (string, error) {
+func CreateJWT(user *types.User) (string, time.Time, error) {
+	expAt := time.Now().Add(time.Minute * time.Duration(config.Data.AccessTokenExpMinutes))
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":    user.ID,
 		"email":      user.Email,
 		"created_at": time.Now().Unix(),
-		"expires_at": time.Now().Add(time.Minute * time.Duration(config.Data.AccessTokenExpMinutes)).Unix(),
+		"expires_at": expAt.Unix(),
 	})
 
 	tokenStr, err := token.SignedString(config.Data.JWTSecret)
 
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 
-	return tokenStr, nil
+	return tokenStr, expAt, nil
 }
 
-func CreateJWTPair(user *types.User, refreshToken *types.RefreshToken) (map[string]string, error) {
+func CreateJWTPair(user *types.User, refreshToken *types.RefreshToken) (map[string]string, map[string]time.Time, error) {
 	if refreshToken == nil || user == nil {
-		return nil, errors.New("refresh token or user is nil")
+		return nil, nil, errors.New("refresh token or user is nil")
 	}
 
-	refreshTokenStr, err := CreateJWTRefresh(refreshToken)
+	refreshTokenStr, refreshTokenExpAt, err := CreateJWTRefresh(refreshToken)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	accessTokenStr, err := CreateJWT(user)
+	accessTokenStr, accessTokenExpAt, err := CreateJWT(user)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return map[string]string{
-		"refreshToken": refreshTokenStr,
-		"accessToken":  accessTokenStr,
-	}, nil
+			"refreshToken": refreshTokenStr,
+			"accessToken":  accessTokenStr,
+		}, map[string]time.Time{
+			"refreshToken": refreshTokenExpAt,
+			"accessToken":  accessTokenExpAt,
+		}, nil
 }
 
 func Map[T any, F any](mapper func(int, T) F, values []T) []F {
@@ -153,4 +157,16 @@ func Have[T any](haveF func(int, T) bool, data []T) bool {
 	}
 
 	return false
+}
+
+func SetTokenCookie(w http.ResponseWriter, name, token string, expiry time.Time) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    token,
+		Expires:  expiry,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+	})
 }
