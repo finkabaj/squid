@@ -187,13 +187,16 @@ func (c *KanbanController) createColumn(w http.ResponseWriter, r *http.Request) 
 
 	user := middleware.UserFromContext(r.Context())
 
-	newColumn, project, err := service.CreateColumn(&user, &columnData)
+	newColumn, columns, project, err := service.CreateColumn(&user, &columnData)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusCreated, newColumn); err != nil {
+	if err = utils.MarshalBody(w, http.StatusCreated, map[string]interface{}{
+		"new_column": newColumn,
+		"columns":    columns,
+	}); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal column"))
 		return
 	}
@@ -201,7 +204,15 @@ func (c *KanbanController) createColumn(w http.ResponseWriter, r *http.Request) 
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(newColumn.ProjectID, websocket.KanbanColumnCreatedEvent, "kanban column created", newColumn, projectUsers)
+	c.WSServer.BroadcastToProject(
+		newColumn.ProjectID,
+		websocket.KanbanColumnCreatedEvent,
+		"kanban column created",
+		map[string]interface{}{
+			"new_column": newColumn,
+			"columns":    columns,
+		},
+		projectUsers)
 }
 
 func (c *KanbanController) getColumn(w http.ResponseWriter, r *http.Request) {
@@ -240,13 +251,16 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 
 	user := middleware.UserFromContext(r.Context())
 
-	column, project, err := service.UpdateColumn(&columnID, &user, &columnData)
+	column, columns, project, err := service.UpdateColumn(&columnID, &user, &columnData)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, column); err != nil {
+	if err = utils.MarshalBody(w, http.StatusOK, map[string]interface{}{
+		"updated_column": column,
+		"columns":        columns,
+	}); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal column"))
 		return
 	}
@@ -254,7 +268,10 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnUpdatedEvent, "kanban column updated", column, projectUsers)
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnUpdatedEvent, "kanban column updated", map[string]interface{}{
+		"updated_column": column,
+		"columns":        columns,
+	}, projectUsers)
 }
 
 func (c *KanbanController) deleteColumn(w http.ResponseWriter, r *http.Request) {
@@ -266,13 +283,13 @@ func (c *KanbanController) deleteColumn(w http.ResponseWriter, r *http.Request) 
 
 	user := middleware.UserFromContext(r.Context())
 
-	project, err := service.DeleteColumn(&columnID, &user)
+	columns, project, err := service.DeleteColumn(&columnID, &user)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "kanban column deleted succesfully"}); err != nil {
+	if err = utils.MarshalBody(w, http.StatusOK, columns); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal okResponse"))
 		return
 	}
@@ -280,7 +297,7 @@ func (c *KanbanController) deleteColumn(w http.ResponseWriter, r *http.Request) 
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnDeletedEvent, "kanban column deleted", nil, projectUsers)
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnDeletedEvent, "kanban column deleted", columns, projectUsers)
 }
 
 func (c *KanbanController) getColumns(w http.ResponseWriter, r *http.Request) {

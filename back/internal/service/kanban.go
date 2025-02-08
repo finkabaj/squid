@@ -115,6 +115,10 @@ func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProj
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	if updateProject.Name == nil && updateProject.AdminIDs == nil && updateProject.MembersIDs == nil && updateProject.Description == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("at least one field must be updated"))
+	}
+
 	project, err := repository.GetProject(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *id)))
@@ -198,9 +202,9 @@ func DeleteProject(user *types.User, projectID *string) (types.Project, error) {
 	return project, nil
 }
 
-func CreateColumn(user *types.User, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, types.Project, error) {
+func CreateColumn(user *types.User, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, []types.KanbanColumn, types.Project, error) {
 	if user == nil || createColumn == nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("user or createColumn is nil"))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("user or createColumn is nil"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -209,22 +213,49 @@ func CreateColumn(user *types.User, createColumn *types.CreateKanbanColumn) (typ
 	project, err := repository.GetProject(ctx, &createColumn.ProjectID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", createColumn.ProjectID)))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", createColumn.ProjectID)))
 	} else if err != nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
 	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
-		return types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can create new column"))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can create new column"))
 	}
 
 	if createColumn.LabelID != nil {
 		_, err := repository.GetKanbanColumnLabel(ctx, createColumn.LabelID)
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *createColumn.LabelID)))
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *createColumn.LabelID)))
 		} else if err != nil {
-			return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		}
+	}
+
+	columns, err := repository.GetColumns(ctx, &createColumn.ProjectID)
+	if err != nil {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if createColumn.Order < 1 {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("order must be at least 1"))
+	}
+
+	if len(columns) == 0 {
+		if createColumn.Order != 1 {
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("first column must have order 1"))
+		}
+	} else {
+		maxOrder := columns[len(columns)-1].Order
+		if createColumn.Order > maxOrder+1 {
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("cannot create column with gaps in order"))
+		}
+	}
+
+	if len(columns) > 0 && createColumn.Order <= len(columns) {
+		err = repository.ShiftColumnOrder(ctx, &createColumn.ProjectID, createColumn.Order)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 		}
 	}
 
@@ -233,10 +264,15 @@ func CreateColumn(user *types.User, createColumn *types.CreateKanbanColumn) (typ
 	newColumn, err := repository.CreateKanbanColumn(ctx, &id, &project.ID, createColumn)
 
 	if err != nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	return newColumn, project, nil
+	updatedColumns, err := repository.GetColumns(ctx, &createColumn.ProjectID)
+	if err != nil {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return newColumn, updatedColumns, project, nil
 }
 
 func GetColumn(columnID *string, userID *string) (types.KanbanColumn, error) {
@@ -270,60 +306,98 @@ func GetColumn(columnID *string, userID *string) (types.KanbanColumn, error) {
 	return column, nil
 }
 
-func UpdateColumn(columnID *string, user *types.User, updateColumn *types.UpdateKanbanColumn) (types.KanbanColumn, types.Project, error) {
+func UpdateColumn(columnID *string, user *types.User, updateColumn *types.UpdateKanbanColumn) (types.KanbanColumn, []types.KanbanColumn, types.Project, error) {
 	if columnID == nil || user == nil || updateColumn == nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("columnID or user or updateColumn is nil"))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("columnID or user or updateColumn is nil"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	if updateColumn.DeleteLabel == nil && updateColumn.LabelID == nil && updateColumn.Name == nil && updateColumn.Order == nil {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("nothing to update"))
+	}
+
 	project, err := repository.GetProject(ctx, &updateColumn.ProjectID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateColumn.ProjectID)))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateColumn.ProjectID)))
 	} else if err != nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
 	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
-		return types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can update column"))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admin can update column"))
 	}
 
 	column, err := repository.GetKanbanColumn(ctx, columnID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
 	} else if err != nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
 	if column.ProjectID != project.ID {
-		return types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("column does not belong to project"))
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("column does not belong to project"))
 	}
 
 	if updateColumn.LabelID != nil {
 		_, err := repository.GetKanbanColumnLabel(ctx, updateColumn.LabelID)
 
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *updateColumn.LabelID)))
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *updateColumn.LabelID)))
 		} else if err != nil {
-			return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		}
+	}
+
+	columns, err := repository.GetColumns(ctx, &updateColumn.ProjectID)
+	if err != nil {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if updateColumn.Order != nil {
+		if *updateColumn.Order < 1 {
+			return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("order must be at least 1"))
+		}
+
+		if *updateColumn.Order > len(columns) {
+			return types.KanbanColumn{}, nil, types.Project{}, utils.NewBadRequestError(errors.New("order cannot exceed number of columns"))
+		}
+
+		currentOrder := column.Order
+		newOrder := *updateColumn.Order
+
+		if currentOrder != newOrder {
+			if newOrder > currentOrder {
+				err = repository.ShiftColumnOrdersInRange(ctx, &updateColumn.ProjectID, currentOrder+1, newOrder, -1)
+			} else {
+				err = repository.ShiftColumnOrdersInRange(ctx, &updateColumn.ProjectID, newOrder, currentOrder-1, 1)
+			}
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return types.KanbanColumn{}, nil, types.Project{}, utils.NewInternalError(err)
+			}
 		}
 	}
 
 	updatedColumn, err := repository.UpdateKanbanColumn(ctx, updateColumn, &column)
 
 	if err != nil {
-		return types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	return updatedColumn, project, nil
+	updatedColumns, err := repository.GetColumns(ctx, &updateColumn.ProjectID)
+	if err != nil {
+		return types.KanbanColumn{}, []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedColumn, updatedColumns, project, nil
 }
 
-func DeleteColumn(columnID *string, user *types.User) (types.Project, error) {
+func DeleteColumn(columnID *string, user *types.User) ([]types.KanbanColumn, types.Project, error) {
 	if columnID == nil || user == nil {
-		return types.Project{}, utils.NewBadRequestError(errors.New("columnID or user is nil"))
+		return []types.KanbanColumn{}, types.Project{}, utils.NewBadRequestError(errors.New("columnID or user is nil"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -332,28 +406,42 @@ func DeleteColumn(columnID *string, user *types.User) (types.Project, error) {
 	column, err := repository.GetKanbanColumn(ctx, columnID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
+		return []types.KanbanColumn{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("column with id: %s not found", *columnID)))
 	} else if err != nil {
-		return types.Project{}, utils.NewInternalError(err)
+		return []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
 	project, err := repository.GetProject(ctx, &column.ProjectID)
 
 	if err != nil {
-		return types.Project{}, utils.NewInternalError(err)
+		return []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
 	if project.CreatorID != user.ID && !utils.Have(func(_ int, adminID string) bool { return adminID == user.ID }, project.AdminIDs) {
-		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can delete column"))
+		return []types.KanbanColumn{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can delete column"))
 	}
 
 	err = repository.DeleteKanbanColumn(ctx, columnID)
 
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return types.Project{}, utils.NewInternalError(err)
+		return []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	return project, nil
+	columns, err := repository.GetColumns(ctx, &project.ID)
+	if err != nil {
+		return []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if len(columns) != 1 {
+		fromOrder := column.Order
+		toOrder := len(columns)
+		err = repository.ShiftColumnOrdersInRange(ctx, &project.ID, fromOrder, toOrder, 1)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return []types.KanbanColumn{}, types.Project{}, utils.NewInternalError(err)
+		}
+	}
+
+	return columns, project, nil
 }
 
 func GetColumns(projectID *string, userID *string) ([]types.KanbanColumn, error) {
@@ -458,6 +546,10 @@ func UpdateColumnLabel(userID *string, labelID *string, updateLabel *types.Updat
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	if updateLabel.Name == nil && updateLabel.Color == nil {
+		return types.KanbanColumnLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("at least one field must be updated"))
+	}
+
 	project, err := repository.GetProject(ctx, &updateLabel.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return types.KanbanColumnLabel{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateLabel.ProjectID)))
@@ -509,6 +601,7 @@ func GetColumnLabels(userID *string, projectID *string) ([]types.KanbanColumnLab
 	return labels, nil
 }
 
+// TODO: reorder other columns
 func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, types.Project, error) {
 	if createRow == nil || userID == nil {
 		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createRow is nil"))
@@ -566,6 +659,7 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 	return row, project, nil
 }
 
+// TODO: reorder other columns
 func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) (types.KanbanRow, types.Project, error) {
 	if updateRow == nil || userID == nil || rowID == nil {
 		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or rowID or updateRow is nil"))
@@ -573,6 +667,12 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	if updateRow.Name == nil && updateRow.LabelID == nil && updateRow.Order == nil &&
+		updateRow.DeleteLabel == nil && updateRow.Priority == nil && updateRow.AssignedUsersIDs == nil &&
+		updateRow.DueDate == nil && updateRow.Description == nil {
+		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("nothing to update"))
+	}
 
 	if updateRow.Priority != nil && *updateRow.Priority != types.LowPriority && *updateRow.Priority != types.MediumPriority && *updateRow.Priority != types.HighPriority {
 		return types.KanbanRow{}, types.Project{}, utils.NewBadRequestError(errors.New("invalid priority"))
@@ -635,6 +735,7 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 	return updatedRow, project, nil
 }
 
+// TODO: reorder other columns
 func DeleteRow(userID *string, rowID *string) (types.Project, error) {
 	if userID == nil || rowID == nil {
 		return types.Project{}, utils.NewBadRequestError(errors.New("userID or rowID is nil"))

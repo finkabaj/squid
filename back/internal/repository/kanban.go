@@ -188,7 +188,6 @@ func DeleteProject(ctx context.Context, userID *string, projectID *string) error
 	return errors.WithStack(err)
 }
 
-// TODO: reorder other columns on creation
 func CreateKanbanColumn(ctx context.Context, id *string, projectID *string, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, error) {
 	if projectID == nil || createColumn == nil {
 		return types.KanbanColumn{}, errors.New("All arguments must not be nil")
@@ -253,7 +252,6 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 	})
 }
 
-// TODO: reorder other columns on update
 func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanColumn, column *types.KanbanColumn) (types.KanbanColumn, error) {
 	if column == nil || updateColumn == nil {
 		return types.KanbanColumn{}, errors.New("all arguments must not be nil")
@@ -298,7 +296,6 @@ func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanCol
 	})
 }
 
-// TODO: reorder other columns on delete
 func DeleteKanbanColumn(ctx context.Context, id *string) error {
 	if id == nil {
 		return errors.New("Id must not be nil")
@@ -417,6 +414,36 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 
 		return columns, errors.WithStack(rows.Err())
 	})
+}
+
+func ShiftColumnOrder(ctx context.Context, projectID *string, fromOrder int) error {
+	if projectID == nil {
+		return errors.New("projectID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        UPDATE "kanbanColumns"
+        SET "order" = "order" + 1
+        WHERE "projectID" = $1 AND "order" >= $2 
+    `, projectID, fromOrder)
+
+	return errors.WithStack(err)
+}
+
+func ShiftColumnOrdersInRange(ctx context.Context, projectID *string, startOrder, endOrder, shift int) error {
+	if projectID == nil {
+		return errors.New("projectID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        UPDATE "kanbanColumns" 
+        SET "order" = "order" + $1
+        WHERE "projectID" = $2 
+        AND "order" >= $3 
+        AND "order" <= $4
+    `, shift, projectID, startOrder, endOrder)
+
+	return errors.WithStack(err)
 }
 
 func CreateKanbanColumnLabel(ctx context.Context, id *string, createColumnLabel *types.CreateKanbanColumnLabel, specialTag *types.SpecialTag) (types.KanbanColumnLabel, error) {
@@ -714,4 +741,18 @@ func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
 
 		return row, nil
 	})
+}
+
+func ShiftRowOrder(ctx context.Context, columnID *string, fromOrder int) error {
+	if columnID == nil {
+		return errors.New("columnID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        UPDATE "kanbanRows"
+        SET "order" = "order" + 1
+        WHERE "columnID" = $1 AND "order" >= $2 
+    `, columnID, fromOrder)
+
+	return errors.WithStack(err)
 }
