@@ -435,13 +435,13 @@ func (c *KanbanController) createRow(w http.ResponseWriter, r *http.Request) {
 
 	user := middleware.UserFromContext(r.Context())
 
-	row, project, err := service.CreateRow(&user.ID, &createRow)
+	row, rows, project, err := service.CreateRow(&user.ID, &createRow)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err := utils.MarshalBody(w, http.StatusCreated, row); err != nil {
+	if err := utils.MarshalBody(w, http.StatusCreated, map[string]interface{}{"new_row": row, "rows": rows}); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal row")))
 		return
 	}
@@ -449,7 +449,16 @@ func (c *KanbanController) createRow(w http.ResponseWriter, r *http.Request) {
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanRowCreatedEvent, "kanban column label updated", row, projectUsers)
+	c.WSServer.BroadcastToProject(
+		project.ID,
+		websocket.KanbanRowCreatedEvent,
+		"kanban column label updated",
+		map[string]interface{}{
+			"new_row": row,
+			"rows":    rows,
+		},
+		projectUsers,
+	)
 }
 
 func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
@@ -467,13 +476,13 @@ func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
 
 	user := middleware.UserFromContext(r.Context())
 
-	row, project, err := service.UpdateRow(&user.ID, &rowID, &updateRow)
+	row, rows, project, err := service.UpdateRow(&user.ID, &rowID, &updateRow)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err := utils.MarshalBody(w, http.StatusOK, row); err != nil {
+	if err := utils.MarshalBody(w, http.StatusOK, map[string]interface{}{"updated_row": row, "rows": rows}); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal label")))
 		return
 	}
@@ -481,7 +490,16 @@ func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnLabelUpdatedEvent, "kanban column label updated", row, projectUsers)
+	c.WSServer.BroadcastToProject(
+		project.ID,
+		websocket.KanbanColumnLabelUpdatedEvent,
+		"kanban column label updated",
+		map[string]interface{}{
+			"updated_row": row,
+			"rows":        rows,
+		},
+		projectUsers,
+	)
 }
 
 func (c *KanbanController) deleteRow(w http.ResponseWriter, r *http.Request) {
@@ -493,13 +511,13 @@ func (c *KanbanController) deleteRow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	project, err := service.DeleteRow(&user.ID, &rowID)
+	rows, project, err := service.DeleteRow(&user.ID, &rowID)
 	if err != nil {
 		utils.HandleError(w, err)
 		return
 	}
 
-	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "kanban row deleted succesfully"}); err != nil {
+	if err := utils.MarshalBody(w, http.StatusOK, rows); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal okResponse"))
 		return
 	}
@@ -507,7 +525,7 @@ func (c *KanbanController) deleteRow(w http.ResponseWriter, r *http.Request) {
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanRowDeletedEvent, "kanban row deleted", nil, projectUsers)
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanRowDeletedEvent, "kanban row deleted", rows, projectUsers)
 }
 
 func (c *KanbanController) getRows(w http.ResponseWriter, r *http.Request) {
