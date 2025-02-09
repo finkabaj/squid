@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
@@ -188,7 +189,6 @@ func DeleteProject(ctx context.Context, userID *string, projectID *string) error
 	return errors.WithStack(err)
 }
 
-// TODO: reorder other columns on creation
 func CreateKanbanColumn(ctx context.Context, id *string, projectID *string, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, error) {
 	if projectID == nil || createColumn == nil {
 		return types.KanbanColumn{}, errors.New("All arguments must not be nil")
@@ -253,7 +253,6 @@ func GetKanbanColumn(ctx context.Context, id *string) (types.KanbanColumn, error
 	})
 }
 
-// TODO: reorder other columns on update
 func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanColumn, column *types.KanbanColumn) (types.KanbanColumn, error) {
 	if column == nil || updateColumn == nil {
 		return types.KanbanColumn{}, errors.New("all arguments must not be nil")
@@ -298,13 +297,37 @@ func UpdateKanbanColumn(ctx context.Context, updateColumn *types.UpdateKanbanCol
 	})
 }
 
-// TODO: reorder other columns on delete
 func DeleteKanbanColumn(ctx context.Context, id *string) error {
 	if id == nil {
 		return errors.New("Id must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `DELETE FROM "kanbanColumns" WHERE id = $1`, id)
+	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
+		var columnOrder int
+		var projectID string
+		err := tx.QueryRow(ctx, `
+            SELECT "order", "projectID" FROM "kanbanColumns" 
+            WHERE id = $1
+        `, id).Scan(&columnOrder, &projectID)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            DELETE FROM "kanbanColumns" WHERE id = $1
+        `, id)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            UPDATE "kanbanColumns" 
+            SET "order" = "order" - 1
+            WHERE "projectID" = $1 AND "order" > $2
+        `, projectID, columnOrder)
+
+		return nil, errors.WithStack(err)
+	})
 
 	return errors.WithStack(err)
 }
@@ -417,6 +440,40 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 
 		return columns, errors.WithStack(rows.Err())
 	})
+}
+
+func ShiftOrder(ctx context.Context, tableName string, idName string, id *string, fromOrder int) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	query := fmt.Sprintf(`
+        UPDATE "%s"
+        SET "order" = "order" + 1
+        WHERE "%s" = $1 AND "order" >= $2
+    `, tableName, idName)
+
+	_, err := queryOneReturning[any](ctx, query, id, fromOrder)
+
+	return errors.WithStack(err)
+}
+
+func ShiftOrdersInRange(ctx context.Context, tableName string, idName string, id *string, startOrder, endOrder, shift int) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	query := fmt.Sprintf(`
+        UPDATE "%s"
+        SET "order" = "order" + $1
+        WHERE "%s" = $2
+        AND "order" >= $3
+        AND "order" <= $4 
+    `, tableName, idName)
+
+	_, err := queryOneReturning[any](ctx, query, shift, id, startOrder, endOrder)
+
+	return errors.WithStack(err)
 }
 
 func CreateKanbanColumnLabel(ctx context.Context, id *string, createColumnLabel *types.CreateKanbanColumnLabel, specialTag *types.SpecialTag) (types.KanbanColumnLabel, error) {
@@ -667,15 +724,34 @@ func DeleteRow(ctx context.Context, rowID *string) error {
 		return errors.New("rowID must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `
-        DELETE FROM "kanbanRows" WHERE "id"=$1
+	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
+		var rowOrder int
+		var columnID string
+		err := tx.QueryRow(ctx, `
+            SELECT "order", "columnID" FROM "kanbanRows" 
+            WHERE id = $1
+        `, rowID).Scan(&rowOrder, &columnID)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            DELETE FROM "kanbanRows" WHERE id = $1
         `, rowID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.WithStack(err)
+		}
 
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return errors.WithStack(err)
-	}
+		_, err = tx.Exec(ctx, `
+            UPDATE "kanbanRows" 
+            SET "order" = "order" - 1
+            WHERE "columnID" = $1 AND "order" > $2
+        `, columnID, rowOrder)
 
-	return nil
+		return nil, errors.WithStack(err)
+	})
+
+	return errors.WithStack(err)
 }
 
 func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
@@ -714,4 +790,18 @@ func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
 
 		return row, nil
 	})
+}
+
+func ShiftRowOrder(ctx context.Context, columnID *string, fromOrder int) error {
+	if columnID == nil {
+		return errors.New("columnID must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        UPDATE "kanbanRows"
+        SET "order" = "order" + 1
+        WHERE "columnID" = $1 AND "order" >= $2 
+    `, columnID, fromOrder)
+
+	return errors.WithStack(err)
 }
