@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/finkabaj/squid/back/internal/types"
 	"github.com/finkabaj/squid/back/internal/utils"
@@ -301,7 +302,32 @@ func DeleteKanbanColumn(ctx context.Context, id *string) error {
 		return errors.New("Id must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `DELETE FROM "kanbanColumns" WHERE id = $1`, id)
+	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
+		var columnOrder int
+		var projectID string
+		err := tx.QueryRow(ctx, `
+            SELECT "order", "projectID" FROM "kanbanColumns" 
+            WHERE id = $1
+        `, id).Scan(&columnOrder, &projectID)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            DELETE FROM "kanbanColumns" WHERE id = $1
+        `, id)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            UPDATE "kanbanColumns" 
+            SET "order" = "order" - 1
+            WHERE "projectID" = $1 AND "order" > $2
+        `, projectID, columnOrder)
+
+		return nil, errors.WithStack(err)
+	})
 
 	return errors.WithStack(err)
 }
@@ -416,32 +442,36 @@ func GetColumns(ctx context.Context, projectID *string) ([]types.KanbanColumn, e
 	})
 }
 
-func ShiftColumnOrder(ctx context.Context, projectID *string, fromOrder int) error {
-	if projectID == nil {
-		return errors.New("projectID must not be nil")
+func ShiftOrder(ctx context.Context, tableName string, idName string, id *string, fromOrder int) error {
+	if id == nil {
+		return errors.New("id must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `
-        UPDATE "kanbanColumns"
+	query := fmt.Sprintf(`
+        UPDATE "%s"
         SET "order" = "order" + 1
-        WHERE "projectID" = $1 AND "order" >= $2 
-    `, projectID, fromOrder)
+        WHERE "%s" = $1 AND "order" >= $2
+    `, tableName, idName)
+
+	_, err := queryOneReturning[any](ctx, query, id, fromOrder)
 
 	return errors.WithStack(err)
 }
 
-func ShiftColumnOrdersInRange(ctx context.Context, projectID *string, startOrder, endOrder, shift int) error {
-	if projectID == nil {
-		return errors.New("projectID must not be nil")
+func ShiftOrdersInRange(ctx context.Context, tableName string, idName string, id *string, startOrder, endOrder, shift int) error {
+	if id == nil {
+		return errors.New("id must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `
-        UPDATE "kanbanColumns" 
+	query := fmt.Sprintf(`
+        UPDATE "%s"
         SET "order" = "order" + $1
-        WHERE "projectID" = $2 
-        AND "order" >= $3 
-        AND "order" <= $4
-    `, shift, projectID, startOrder, endOrder)
+        WHERE "%s" = $2
+        AND "order" >= $3
+        AND "order" <= $4 
+    `, tableName, idName)
+
+	_, err := queryOneReturning[any](ctx, query, shift, id, startOrder, endOrder)
 
 	return errors.WithStack(err)
 }
@@ -694,15 +724,34 @@ func DeleteRow(ctx context.Context, rowID *string) error {
 		return errors.New("rowID must not be nil")
 	}
 
-	_, err := queryOneReturning[any](ctx, `
-        DELETE FROM "kanbanRows" WHERE "id"=$1
+	_, err := withTx(ctx, func(tx pgx.Tx) (any, error) {
+		var rowOrder int
+		var columnID string
+		err := tx.QueryRow(ctx, `
+            SELECT "order", "columnID" FROM "kanbanRows" 
+            WHERE id = $1
+        `, rowID).Scan(&rowOrder, &columnID)
+		if err != nil {
+			return nil, errors.WithStack(err)
+		}
+
+		_, err = tx.Exec(ctx, `
+            DELETE FROM "kanbanRows" WHERE id = $1
         `, rowID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.WithStack(err)
+		}
 
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return errors.WithStack(err)
-	}
+		_, err = tx.Exec(ctx, `
+            UPDATE "kanbanRows" 
+            SET "order" = "order" - 1
+            WHERE "columnID" = $1 AND "order" > $2
+        `, columnID, rowOrder)
 
-	return nil
+		return nil, errors.WithStack(err)
+	})
+
+	return errors.WithStack(err)
 }
 
 func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
