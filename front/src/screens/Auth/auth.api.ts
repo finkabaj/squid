@@ -18,6 +18,12 @@ const register = (data: IRegisterValues) => {
     .catch(handleHttpError)
 }
 
+const logout = () => {
+  return axios
+  .post(config.API_URL + '/auth/logout', {}, {withCredentials: true})
+  .then(handleHttpResponse)
+  .catch(handleHttpError)
+}
 
 const refresh = (): Promise<IRefreshResponse> => {
   const refreshToken = Cookies.get('refresh_token')
@@ -53,6 +59,7 @@ const authApi = {
   login,
   register,
   refresh,
+  logout
 }
 
 export default authApi

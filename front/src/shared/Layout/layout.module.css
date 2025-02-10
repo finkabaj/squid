@@ -1,0 +1,27 @@
+.wrapper{
+    height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+}
+.page_content{
+    height: 100vh;
+    width: 100%;
+}
+.left_bar{
+    padding-top: 100px;
+    width: 75px;
+    display: flex;
+    flex-direction: column;
+    gap: 700px;
+    background: #2A3B56;
+    align-items: center;
+}
+.exit_btn{
+    outline: none;
+    border: none;
+    cursor: pointer;
+    width: 16px;
+    height: 20px;
+    background: transparent;
+}

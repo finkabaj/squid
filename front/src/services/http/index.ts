@@ -33,6 +33,7 @@ export const applyInterceptors = (profileState: MutableRefObject<IUser>, setProf
 
   const ensureAuthorization = (): Promise<Pick<IRefreshResponse,'result'>> => {
     const access_token = Cookies.get('access_token')
+    console.log(access_token)
     const shouldRefresh = profileState.current.id === '' && access_token === ''
     return shouldRefresh ? refreshToken() : Promise.resolve(profileState.current)
   }
