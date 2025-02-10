@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/finkabaj/squid/back/internal/config"
@@ -19,14 +18,13 @@ type ValidateJWTCtxKey struct{}
 
 func ValidateJWT(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authHeader := r.Header.Get("Authorization")
-
-		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			utils.HandleError(w, utils.NewUnauthorizedError(errors.New("invalid authorization header")))
+		cookie, err := r.Cookie("access_token")
+		if err != nil {
+			utils.HandleError(w, utils.NewUnauthorizedError(errors.New("No access token cookie")))
 			return
 		}
 
-		tokenString := authHeader[7:]
+		tokenString := cookie.Value
 
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
