@@ -1,9 +1,11 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import config from '../../config.ts'
-import { IAuthResponse } from '../../screens/Auth/auth.types.ts'
-import { Dispatch, SetStateAction } from 'react'
+import { IRefreshResponse, IUser } from '../../screens/Auth/auth.types.ts'
+import { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import { IHTTPErrorResponse, IHTTPSuccessResponse } from './http.types.ts'
 import authApi from '../../screens/Auth/auth.api.ts'
+import Cookies from 'js-cookie';
+
 
 const http = axios.create({
   baseURL: config.API_URL,
@@ -12,24 +14,29 @@ const http = axios.create({
 
 let interceptorsApplied: boolean = false
 
-export const applyInterceptors = (authState: Omit<IAuthResponse, 'user'>, setAuthState: Dispatch<SetStateAction<Omit<IAuthResponse, 'user'>>>) => {
+export const applyInterceptors = (profileState: MutableRefObject<IUser>, setProfileState: Dispatch<SetStateAction<IUser>>) => {
   if (interceptorsApplied) {
     return
   }
   interceptorsApplied = true
   let isRefreshing = false
   let refreshRequest = Promise.resolve({
-    token_pair: {
-      access_token: authState.token_pair.access_token,
-      refresh_token: authState.token_pair.refresh_token,
+    result: {
+      id: profileState.current.id,
+      username: profileState.current.username,
+      email: profileState.current.email,
+      first_name: profileState.current.first_name,
+      last_name: profileState.current.last_name,
+      date_of_birth: profileState.current.date_of_birth
     },
   })
 
-  const ensureAuthorization = (): Promise<Omit<IAuthResponse, 'user'>> => {
-    const shouldRefresh = authState.token_pair.access_token === ''
-    return shouldRefresh ? refreshToken() : Promise.resolve(authState)
+  const ensureAuthorization = (): Promise<Pick<IRefreshResponse,'result'>> => {
+    const access_token = Cookies.get('access_token')
+    const shouldRefresh = profileState.current.id === '' && access_token === ''
+    return shouldRefresh ? refreshToken() : Promise.resolve(profileState.current)
   }
-  const refreshToken = async (): Promise<Omit<IAuthResponse, 'user'>> => {
+  const refreshToken = async (): Promise<Pick<IRefreshResponse, 'result'>>=> {
     if (isRefreshing) return refreshRequest
     isRefreshing = true
 
@@ -38,13 +45,9 @@ export const applyInterceptors = (authState: Omit<IAuthResponse, 'user'>, setAut
   }
 
   http.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-    return ensureAuthorization().then(({ token_pair }) => {
-      setAuthState((prevAuthState) => ({
-        ...prevAuthState,
-        token_pair: token_pair,
-      }))
+    return ensureAuthorization().then(({ result}) => {
+      setProfileState(result)
 
-      config.headers.Authorization = `${token_pair.access_token}`
       return config
     })
   })
@@ -55,9 +58,13 @@ export const applyInterceptors = (authState: Omit<IAuthResponse, 'user'>, setAut
       const shouldLogout = err.response && err.response.status === 401
 
       if (shouldLogout) {
-        localStorage.removeItem('access_token')
-        setAuthState({
-          token_pair: { access_token: '', refresh_token: '' },
+        setProfileState({
+          id: '',
+          username: '',
+          date_of_birth: '',
+          first_name: '',
+          last_name: '',
+          email: ''
         })
       }
 

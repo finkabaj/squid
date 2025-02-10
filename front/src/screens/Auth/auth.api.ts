@@ -1,41 +1,51 @@
 import axios from 'axios'
 import config from '../../config.ts'
-import { IAuthResponse, ILoginValues, IRegisterValues } from './auth.types.ts'
+import { ILoginValues, IRefreshResponse, IRegisterValues, IUser } from './auth.types.ts'
 import { handleHttpError, handleHttpResponse } from '../../services/http'
 import Cookies from 'js-cookie';
 
 const login = (data: ILoginValues) => {
   return axios
-    .post(config.API_URL + '/auth/login', data)
+    .post(config.API_URL + '/auth/login', data, {withCredentials: true})
     .then(handleHttpResponse)
     .catch(handleHttpError)
 }
 
 const register = (data: IRegisterValues) => {
   return axios
-    .post(config.API_URL + '/auth/register', data)
+    .post(config.API_URL + '/auth/register', data, {withCredentials: true})
     .then(handleHttpResponse)
     .catch(handleHttpError)
 }
 
-const refresh = (): Promise<Pick<IAuthResponse, 'token_pair'>> => {
+
+const refresh = (): Promise<IRefreshResponse> => {
   const refreshToken = Cookies.get('refresh_token')
   return axios
-    .post<IAuthResponse>(
+    .post<IUser>(
       config.API_URL + '/auth/refresh',
       {
         refresh_token: refreshToken,
       },
+      {
+        withCredentials: true
+      }
     )
     .then((r) => ({
-      token_pair: r.data.token_pair,
+      status: "success",
+      result: r.data
     }))
     .catch(() => ({
       status: 'error',
-      token_pair: {
-        access_token: '',
-        refresh_token: '',
-      },
+      result: {
+        id: '',
+        username: '',
+        first_name: '',
+        last_name: '',
+        date_of_birth: '',
+        email: '',
+      }
+      
     }))
 }
 
