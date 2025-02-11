@@ -576,7 +576,7 @@ func CreateKanbanRow(ctx context.Context, id *string, userID *string, createRow 
 		}
 
 		if labelID != nil {
-			rowLabel, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx, `SELECT * FROM "kanbanRowLabels" WHERE "id" = $1`, labelID)
+			rowLabel, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM "kanbanRowLabels" WHERE "id" = $1`, labelID)
 
 			if err != nil {
 				return types.KanbanRow{}, errors.WithStack(err)
@@ -691,7 +691,7 @@ func GetRows(ctx context.Context, columnID *string) ([]types.KanbanRow, error) {
 			}
 
 			if labelID != nil {
-				label, err := queryOneReturningTx[types.KanbanRowLabel](ctx, tx, `SELECT * FROM kanbanRowLabels WHERE id = $1`, labelID)
+				label, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM "kanbanRowLabels" WHERE id = $1`, labelID)
 				if err != nil {
 					return []types.KanbanRow{}, errors.WithStack(err)
 				}
@@ -804,4 +804,64 @@ func ShiftRowOrder(ctx context.Context, columnID *string, fromOrder int) error {
     `, columnID, fromOrder)
 
 	return errors.WithStack(err)
+}
+
+func CreateKanbanRowLabel(ctx context.Context, id *string, createRowLabel *types.CreateKanbanRowLabel) (types.KanbanRowLabel, error) {
+	if id == nil || createRowLabel == nil {
+		return types.KanbanRowLabel{}, errors.New("createRowLabel and id must not be nil")
+	}
+
+	return queryOneReturning[types.KanbanRowLabel](ctx, `
+        INSERT INTO "kanbanRowLabels" 
+        ("projectID", "id", "name", "color") 
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+    `, createRowLabel.ProjectID, id, createRowLabel.Name, createRowLabel.Color)
+}
+
+func GetKanbanRowLabel(ctx context.Context, id *string) (types.KanbanRowLabel, error) {
+	if id == nil {
+		return types.KanbanRowLabel{}, errors.New("id is nil")
+	}
+
+	return queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM "kanbanRowLabels" WHERE "id"=$1`, id)
+}
+
+func DeleteKanbanRowLabel(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "kanbanRowLabels" WHERE "id" = $1
+    `, id)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+func UpdateKanbanRowLabel(ctx context.Context, id *string, updateRowLabel *types.UpdateKanbanRowLabel) (types.KanbanRowLabel, error) {
+	if id == nil || updateRowLabel == nil {
+		return types.KanbanRowLabel{}, errors.New("updateRowLabel and id  must not be nil")
+	}
+
+	return queryOneReturning[types.KanbanRowLabel](ctx, `
+        UPDATE "kanbanRowLabels" 
+        SET "name" = coalesce($1, "name"), "color" = coalesce($2, "color")
+        WHERE "id"=$3
+        RETURNING *
+    `, updateRowLabel.Name, updateRowLabel.Color, id)
+}
+
+func GetKanbanRowLabels(ctx context.Context, projectID *string) ([]types.KanbanRowLabel, error) {
+	if projectID == nil {
+		return nil, errors.New("projectID must not be nil")
+	}
+
+	return queryReturning[types.KanbanRowLabel](ctx, `
+        SELECT * FROM "kanbanRowLabels" WHERE "projectID" = $1
+    `, projectID)
 }
