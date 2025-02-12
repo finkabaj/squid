@@ -708,6 +708,13 @@ func GetRows(ctx context.Context, columnID *string) ([]types.KanbanRow, error) {
 				return user.UserID
 			}, assignees)
 
+			historyPoints, err := queryReturning[types.HistoryPoint](ctx, `SELECT * FROM "historyPoints" WHERE "rowID" = $1`, row.ID)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return []types.KanbanRow{}, errors.WithStack(err)
+			}
+
+			row.History = &historyPoints
+
 			rows = append(rows, row)
 		}
 
@@ -771,7 +778,7 @@ func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
 		}
 
 		if labelID != nil {
-			label, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM kanbanRowLabels WHERE id = $1`, labelID)
+			label, err := queryOneReturning[types.KanbanRowLabel](ctx, `SELECT * FROM "kanbanRowLabels" WHERE id = $1`, labelID)
 			if err != nil {
 				return types.KanbanRow{}, errors.WithStack(err)
 			}
@@ -787,6 +794,13 @@ func GetRow(ctx context.Context, rowID *string) (types.KanbanRow, error) {
 		row.AssignedUsersIDs = utils.Map(func(_ int, user types.KanbanRowAssignedUser) string {
 			return user.UserID
 		}, assignees)
+
+		historyPoints, err := queryReturning[types.HistoryPoint](ctx, `SELECT * FROM "historyPoints" WHERE "rowID" = $1`, row.ID)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		row.History = &historyPoints
 
 		return row, nil
 	})
@@ -864,4 +878,27 @@ func GetKanbanRowLabels(ctx context.Context, projectID *string) ([]types.KanbanR
 	return queryReturning[types.KanbanRowLabel](ctx, `
         SELECT * FROM "kanbanRowLabels" WHERE "projectID" = $1
     `, projectID)
+}
+
+func CreateHistoryPoint(ctx context.Context, createHistoryPoint *types.HistoryPoint) error {
+	if createHistoryPoint == nil {
+		return errors.New("createHistoryPoint must not be nil")
+	}
+
+	_, err := queryOneReturning[types.HistoryPoint](ctx, `
+        INSERT INTO "historyPoints" 
+        ("id", "rowID", "userID", "text") 
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+    `, createHistoryPoint.ID, createHistoryPoint.RowID, createHistoryPoint.UserID, createHistoryPoint.Text)
+
+	return err
+}
+
+func GetHistoryPoints(ctx context.Context, rowID *string) ([]types.HistoryPoint, error) {
+	if rowID == nil {
+		return nil, errors.New("rowID must not be nil")
+	}
+
+	return queryReturning[types.HistoryPoint](ctx, `SELECT * FROM "historyPoints" WHERE "rowID" = $1`, rowID)
 }

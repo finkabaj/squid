@@ -638,8 +638,6 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 		}
 	}
 
-	// TODO: check if label exists
-
 	rows, err := repository.GetRows(ctx, &createRow.ColumnID)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
@@ -671,6 +669,23 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
+
+	err = repository.CreateHistoryPoint(ctx, &types.HistoryPoint{
+		ID:     uuid.New().String(),
+		RowID:  row.ID,
+		UserID: *userID,
+		Text:   "created",
+	})
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	historyPoints, err := repository.GetHistoryPoints(ctx, &row.ID)
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	row.History = &historyPoints
 
 	updatedRows, err := repository.GetRows(ctx, &createRow.ColumnID)
 	if err != nil {
@@ -745,8 +760,6 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 		}
 	}
 
-	// TODO: check if label exists
-
 	if updateRow.Order != nil {
 		rows, err := repository.GetRows(ctx, &updateRow.ColumnID)
 		if err != nil {
@@ -781,7 +794,24 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	updatedRows, err := repository.GetRows(ctx, &updateRow.ProjectID)
+	err = repository.CreateHistoryPoint(ctx, &types.HistoryPoint{
+		ID:     uuid.NewString(),
+		RowID:  updatedRow.ID,
+		UserID: *userID,
+		Text:   "updated",
+	})
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	historyPoints, err := repository.GetHistoryPoints(ctx, &updatedRow.ID)
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	updatedRow.History = &historyPoints
+
+	updatedRows, err := repository.GetRows(ctx, &updateRow.ColumnID)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}

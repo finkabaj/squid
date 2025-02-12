@@ -235,7 +235,7 @@ type HistoryPoint struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	Text      string    `json:"text"`
-	Timestamp time.Time `json:"timestamp"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type CheckList struct {
