@@ -15,7 +15,7 @@ const Auth = () => {
   })
 
   const changeType = () => {
-    authType === AuthTypeEnum.register ? setAuthType(AuthTypeEnum.login) : setAuthType(AuthTypeEnum.register)
+    authType === AuthTypeEnum.register ? setAuthType(AuthTypeEnum.login) : setAuthType(AuthTypeEnum.register);
   }
 
   const renderContent = () => {

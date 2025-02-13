@@ -1,4 +1,4 @@
 export enum AuthTypeEnum {
-    register = 'register',
-    login = 'login',
+  register = 'register',
+  login = 'login',
 }

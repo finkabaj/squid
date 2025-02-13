@@ -3,14 +3,14 @@ type Mapping = Record<string, unknown>
 type Argument = Value | Mapping | ArgumentArray
 interface ArgumentArray extends Array<Argument> {}
 
-const cn = (...arg: ArgumentArray[]) => {
+/** Implementation of the "classnames" library method */
+const cn = (...arg: ArgumentArray) => {
   if (typeof arg[0] === 'string') return arg.filter(Boolean).join(' ')
 
   const classes = []
-  const classNames = arg[0] as Mapping
 
-  for (const className in classNames) {
-    if (classNames[className]) classes.push(`${className}`)
+  for (const className in arg[0] as Array<Record<string, boolean>>) {
+    if (arg[0][className]) classes.push(`${className}`)
   }
 
   return classes.join(' ')

@@ -1,9 +1,8 @@
-:root{
-    --white: #FDFCFC;
-    --dark-blue: #1C2E4A;
-    --light-gray: #BDC4D4;
-    --dark-gray: #6F7B90;
-    --navy-blue: #2F3D53;
-    --blue-gray: #3F4E67;
-
+:root {
+  --white: #fdfcfc;
+  --dark-blue: #1c2e4a;
+  --light-gray: #bdc4d4;
+  --dark-gray: #6f7b90;
+  --navy-blue: #2f3d53;
+  --blue-gray: #3f4e67;
 }
