@@ -81,7 +81,7 @@ const CredentialForm = (props: PropsWithChildren<IFormProps>) => {
               placeholder='email'
               type='text'
               autoComplete='off'
-              inputStyle={{
+              inputstyle={{
                 color: '2F3D53',
               }}
             />

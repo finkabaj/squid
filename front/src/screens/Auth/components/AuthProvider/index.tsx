@@ -11,11 +11,11 @@ const AuthProvider = (props: PropsWithChildren) => {
   const { wait, loading } = useHttpLoader()
 
   const [profileState, setProfileState] = useRecoilState(profileAtom)
-  const refState = useRef({...profileState})
+  const refState = useRef({ ...profileState })
 
   useEffect(() => {
     applyInterceptors(refState, setProfileState)
-  }, [profileState])
+  }, [])
 
   useLayoutEffect(() => {
     wait(authApi.refresh(), (resp) => {
@@ -25,12 +25,11 @@ const AuthProvider = (props: PropsWithChildren) => {
     })
   }, [])
 
-
   if (loading) {
     return <LoaderPage label={`Кажется, вы тут уже были...\nПытаемся авторизоваться...`} />
   }
 
-  if (!profileState|| profileState.id === '') {
+  if (!profileState || profileState.id === '') {
     return <Auth />
   }
 

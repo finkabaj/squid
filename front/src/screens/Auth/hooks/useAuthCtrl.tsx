@@ -23,11 +23,9 @@ const useAuthCtrl = (props: IProps) => {
   }
 
   const handleSubmitCredentials = () => {
-    let data
-    const actionName = props.actionType === AuthTypeEnum.register ? 'register' : 'login'
 
-    if (actionName === 'login') {
-      data = {
+    if (props.actionType=== 'login') {
+      const data = {
         email: authValues.email,
         password: authValues.password,
       }
@@ -37,7 +35,7 @@ const useAuthCtrl = (props: IProps) => {
         }
       })
     } else {
-      data = {
+      const data = {
         username: authValues.username,
         first_name: authValues.first_name,
         last_name: authValues.last_name,

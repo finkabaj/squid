@@ -1,10 +1,11 @@
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import config from '../../config.ts'
-import { IRefreshResponse, IUser } from '../../screens/Auth/auth.types.ts'
+import { IRefreshResponse} from '../../screens/Auth/auth.types.ts'
+import {IUser} from '../../screens/Profile/profile.types.ts'
 import { Dispatch, SetStateAction, MutableRefObject } from 'react'
 import { IHTTPErrorResponse, IHTTPSuccessResponse } from './http.types.ts'
 import authApi from '../../screens/Auth/auth.api.ts'
-import Cookies from 'js-cookie';
+import { initialProfileState } from '../../screens/Profile/profile.atom.ts'
 
 
 const http = axios.create({
@@ -32,10 +33,8 @@ export const applyInterceptors = (profileState: MutableRefObject<IUser>, setProf
   })
 
   const ensureAuthorization = (): Promise<Pick<IRefreshResponse,'result'>> => {
-    const access_token = Cookies.get('access_token')
-    console.log(access_token)
-    const shouldRefresh = profileState.current.id === '' && access_token === ''
-    return shouldRefresh ? refreshToken() : Promise.resolve(profileState.current)
+    const shouldRefresh = profileState.current.id === ''
+    return shouldRefresh ? refreshToken() : Promise.resolve({ result: profileState.current })
   }
   const refreshToken = async (): Promise<Pick<IRefreshResponse, 'result'>>=> {
     if (isRefreshing) return refreshRequest
@@ -59,14 +58,7 @@ export const applyInterceptors = (profileState: MutableRefObject<IUser>, setProf
       const shouldLogout = err.response && err.response.status === 401
 
       if (shouldLogout) {
-        setProfileState({
-          id: '',
-          username: '',
-          date_of_birth: '',
-          first_name: '',
-          last_name: '',
-          email: ''
-        })
+        setProfileState(initialProfileState)
       }
 
       throw err

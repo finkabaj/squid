@@ -12,17 +12,8 @@ export interface IRegisterValues {
   date_of_birth: Date | undefined
 }
 
-export interface IUser {
-  id: string
-  username: string
-  first_name: string
-  last_name: string
-  date_of_birth: string
-  email: string
-}
-
 export interface IRefreshResponse {
-  status: string
+  status: string,
   result: {
     id: string
     username: string
@@ -30,5 +21,5 @@ export interface IRefreshResponse {
     last_name: string
     date_of_birth: string
     email: string
-  }
+  } 
 }

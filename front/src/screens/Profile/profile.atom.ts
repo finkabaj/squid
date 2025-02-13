@@ -1,15 +1,18 @@
 import { atom } from 'recoil'
+import { IUser } from './profile.types'
 
-const profileAtom = atom({
+export const initialProfileState = {
+  id: '',
+  username: '',
+  first_name: '',
+  last_name: '',
+  date_of_birth: '',
+  email: '',
+}
+
+const profileAtom = atom<IUser>({
   key: 'current_user',
-  default: {
-    id: '',
-    username: '',
-    first_name: '',
-    last_name: '',
-    date_of_birth: '',
-    email: '',
-  },
+  default: initialProfileState,
 })
 
 export default profileAtom
