@@ -6,12 +6,7 @@ export interface IButtonProps extends DetailedHTMLProps<ButtonHTMLAttributes<HTM
 
 const Button = ({ children, loading, ...props }: PropsWithChildren<IButtonProps>) => {
   return (
-    <button
-      {...props}
-      type={props.type ? props.type : 'button'}
-      className={props.className}
-      data-loading={loading ? 'true' : 'false'}
-    >
+    <button {...props} type={props.type ? props.type : 'button'} className={props.className} data-loading={loading ? 'true' : 'false'}>
       <div>{children}</div>
     </button>
   )

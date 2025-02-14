@@ -1,4 +1,4 @@
 export interface IValidationFunctionResponse {
-    key: string
-    message: string
+  key: string
+  message: string
 }

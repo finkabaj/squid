@@ -1,28 +1,18 @@
 import { atom } from 'recoil'
-import decodeJWT from '../../utils/decodeToken.ts'
+import { IUser } from './profile.types'
 
-const getUserId = () => {
-  const tokenItem = localStorage.getItem('access_token')
-  if (!tokenItem) {
-    return ''
-  }
-  const user_id = decodeJWT(tokenItem)
-  if (!user_id) {
-    return ''
-  }
-  return user_id
+export const initialProfileState = {
+  id: '',
+  username: '',
+  first_name: '',
+  last_name: '',
+  date_of_birth: '',
+  email: '',
 }
 
-const profileAtom = atom({
+const profileAtom = atom<IUser>({
   key: 'current_user',
-  default: {
-    user_id: getUserId(),
-    username: '',
-    first_name: '',
-    last_name: '',
-    date_of_birth: '',
-    email: '',
-  },
+  default: initialProfileState,
 })
 
 export default profileAtom

@@ -3,7 +3,7 @@ import ValidationContext from '../../Validation/ValidationContext.ts'
 import cn from '../../../utils/cn.ts'
 export interface ITextInputProps {
   style?: CSSProperties
-  inputStyle?: CSSProperties
+  inputstyle?: CSSProperties
   value: string
   name: string
   onChange: (val: string, name: string) => void
@@ -63,11 +63,11 @@ const TextInput = ({
         onChange={handleChange}
         data-size={size}
         autoComplete='false'
-        style={props.inputStyle}
+        style={props.inputstyle}
         onBlur={onBlur}
         {...props}
       />
-      {isError && <span className={'text-error'} >{error}</span>}
+      {isError && <span className={'text-error'}>{error}</span>}
     </div>
   )
 }

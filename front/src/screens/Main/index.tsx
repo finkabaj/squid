@@ -1,9 +1,5 @@
 const Main = () => {
-    return (
-        <div>
+  return <div></div>
+}
 
-        </div>
-    );
-};
-
-export default Main;
+export default Main
