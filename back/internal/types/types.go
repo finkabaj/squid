@@ -176,7 +176,7 @@ type KanbanRow struct {
 
 	Label     *KanbanRowLabel `json:"label,omitempty"`
 	History   *[]HistoryPoint `json:"history,omitempty"`
-	CheckList *CheckList      `json:"check_list,omitempty"`
+	Checklist *Checklist      `json:"check_list,omitempty"`
 	Comments  *CommentSection `json:"comments,omitempty"`
 }
 
@@ -238,7 +238,7 @@ type HistoryPoint struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type CheckList struct {
+type Checklist struct {
 	ID    string `json:"id"`
 	RowID string `json:"row_id"`
 
@@ -246,7 +246,7 @@ type CheckList struct {
 }
 
 type Point struct {
-	CheckListID string     `json:"check_list_id"`
+	ChecklistID string     `json:"check_list_id"`
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
@@ -257,14 +257,14 @@ type Point struct {
 
 type CreatePoint struct {
 	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	CheckListID string `json:"check_list_id" validate:"required,uuid"`
+	ChecklistID string `json:"check_list_id" validate:"required,uuid"`
 	Name        string `json:"name" validate:"required,min=3,max=50"`
 	Description string `json:"description" validate:"required,min=3,max=100"`
 }
 
 type UpdatePoint struct {
 	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	CheckListID string `json:"check_list_id" validate:"required,uuid"`
+	ChecklistID string `json:"check_list_id" validate:"required,uuid"`
 	Name        string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
 	Description string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
 }

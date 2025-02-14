@@ -31,32 +31,37 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 	}
 
 	r.Route("/kanban", func(r chi.Router) {
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
-		r.With(middleware.ValidateJWT).Get("/project/{project_id}", c.getProject)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{project_id}", c.updateProject)
-		r.With(middleware.ValidateJWT).Delete("/project/{project_id}", c.deleteProject)
-		r.With(middleware.ValidateJWT).Get("/projects", c.getProjects)
+		r.Use(middleware.ValidateJWT)
 
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanColumn]()).Post("/column", c.createColumn)
-		r.With(middleware.ValidateJWT).Get("/column/{column_id}", c.getColumn)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumn]()).Patch("/column/{column_id}", c.updateColumn)
-		r.With(middleware.ValidateJWT).Delete("/column/{column_id}", c.deleteColumn)
-		r.With(middleware.ValidateJWT).Get("/columns/{project_id}", c.getColumns)
+		r.With(middleware.ValidateJson[types.CreateProject]()).Post("/project", c.createProject)
+		r.Get("/project/{project_id}", c.getProject)
+		r.With(middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{project_id}", c.updateProject)
+		r.Delete("/project/{project_id}", c.deleteProject)
+		r.Get("/projects", c.getProjects)
 
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanColumnLabel]()).Post("/column/label", c.createColumnLabel)
-		r.With(middleware.ValidateJWT).Delete("/column/label/{label_id}", c.deleteColumnLabel)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanColumnLabel]()).Patch("/column/label/{label_id}", c.updateColumnLabel)
-		r.With(middleware.ValidateJWT).Get("/column/labels/{project_id}", c.getColumnLabels)
+		r.With(middleware.ValidateJson[types.CreateKanbanColumn]()).Post("/column", c.createColumn)
+		r.Get("/column/{column_id}", c.getColumn)
+		r.With(middleware.ValidateJson[types.UpdateKanbanColumn]()).Patch("/column/{column_id}", c.updateColumn)
+		r.Delete("/column/{column_id}", c.deleteColumn)
+		r.Get("/columns/{project_id}", c.getColumns)
 
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanRow]()).Post("/row", c.createRow)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanRow]()).Patch("/row/{row_id}", c.updateRows)
-		r.With(middleware.ValidateJWT).Delete("/row/{row_id}", c.deleteRow)
-		r.With(middleware.ValidateJWT).Get("/rows/{column_id}", c.getRows)
+		r.With(middleware.ValidateJson[types.CreateKanbanColumnLabel]()).Post("/column/label", c.createColumnLabel)
+		r.Delete("/column/label/{label_id}", c.deleteColumnLabel)
+		r.With(middleware.ValidateJson[types.UpdateKanbanColumnLabel]()).Patch("/column/label/{label_id}", c.updateColumnLabel)
+		r.Get("/column/labels/{project_id}", c.getColumnLabels)
 
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.CreateKanbanRowLabel]()).Post("/row/label", c.createRowLabel)
-		r.With(middleware.ValidateJWT).Delete("/row/label/{label_id}", c.deleteRowLabel)
-		r.With(middleware.ValidateJWT, middleware.ValidateJson[types.UpdateKanbanRowLabel]()).Patch("/row/label/{label_id}", c.updateRowLabel)
-		r.With(middleware.ValidateJWT).Get("/row/labels/{project_id}", c.getRowLabels)
+		r.With(middleware.ValidateJson[types.CreateKanbanRow]()).Post("/row", c.createRow)
+		r.With(middleware.ValidateJson[types.UpdateKanbanRow]()).Patch("/row/{row_id}", c.updateRows)
+		r.Delete("/row/{row_id}", c.deleteRow)
+		r.Get("/rows/{column_id}", c.getRows)
+
+		r.With(middleware.ValidateJson[types.CreateKanbanRowLabel]()).Post("/row/label", c.createRowLabel)
+		r.Delete("/row/label/{label_id}", c.deleteRowLabel)
+		r.With(middleware.ValidateJson[types.UpdateKanbanRowLabel]()).Patch("/row/label/{label_id}", c.updateRowLabel)
+		r.Get("/row/labels/{project_id}", c.getRowLabels)
+
+		r.Post("/checklist/{row_id}", c.createChecklist)
+		r.Delete("/checklist/{checklist_id}", c.deleteChecklist)
 	})
 
 	kanbanControllerInitialized = true
@@ -657,4 +662,56 @@ func (c *KanbanController) getRowLabels(w http.ResponseWriter, r *http.Request) 
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal labels")))
 		return
 	}
+}
+
+func (c *KanbanController) createChecklist(w http.ResponseWriter, r *http.Request) {
+	rowID := chi.URLParam(r, "row_id")
+	if rowID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("row id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	checklist, project, err := service.CreateChecklist(&user.ID, &rowID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, checklist); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal checklist")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanChecklistCreatedEvent, "checklist created", checklist, projectUsers)
+}
+
+func (c *KanbanController) deleteChecklist(w http.ResponseWriter, r *http.Request) {
+	checklistID := chi.URLParam(r, "checklist_id")
+	if checklistID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("checklist id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeleteChecklist(&user.ID, &checklistID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "checklist deleted"}); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal okResponse")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanChecklistDeletedEvent, "checklist deleted", nil, projectUsers)
 }

@@ -902,3 +902,76 @@ func GetHistoryPoints(ctx context.Context, rowID *string) ([]types.HistoryPoint,
 
 	return queryReturning[types.HistoryPoint](ctx, `SELECT * FROM "historyPoints" WHERE "rowID" = $1`, rowID)
 }
+
+func CreateChecklist(ctx context.Context, createChecklist *types.Checklist) (types.Checklist, error) {
+	if createChecklist == nil {
+		return types.Checklist{}, errors.New("createChecklist must not be nil")
+	}
+
+	if _, err := pool.Exec(ctx, `
+        INSERT INTO "checklists" 
+        ("id", "rowID")
+        VALUES ($1, $2)
+    `, createChecklist.ID, createChecklist.RowID); err != nil {
+		return types.Checklist{}, errors.WithStack(err)
+	}
+
+	return *createChecklist, nil
+}
+
+func GetChecklist(ctx context.Context, checklistID *string) (types.Checklist, error) {
+	if checklistID == nil {
+		return types.Checklist{}, errors.New("checklistID must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `SELECT * FROM "checklists" WHERE "id" = $1`, checklistID)
+
+	var checklist types.Checklist
+	err := row.Scan(&checklist.ID, &checklist.RowID)
+	if err != nil {
+		return types.Checklist{}, errors.WithStack(err)
+	}
+
+	points, err := queryReturning[types.Point](ctx, `SELECT * FROM "points" WHERE "checklistID" = $1 ORDER BY "completed" ASC`, checklistID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return types.Checklist{}, errors.WithStack(err)
+	}
+
+	checklist.Points = &points
+
+	return checklist, nil
+}
+
+func DeleteChecklist(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "checklists" WHERE "id" = $1
+    `, id)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+func ChecklistExists(ctx context.Context, rowID *string) (bool, error) {
+	if rowID == nil {
+		return false, errors.New("rowID must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `
+        SELECT 1 FROM "checklists" WHERE "rowID" = $1;
+    `, rowID)
+
+	var check any
+	err := row.Scan(&check)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, errors.WithStack(err)
+	}
+
+	return check != nil, nil
+}

@@ -1021,3 +1021,94 @@ func GetRowLabels(userID *string, projectID *string) ([]types.KanbanRowLabel, er
 
 	return labels, nil
 }
+
+func CreateChecklist(userID *string, rowID *string) (types.Checklist, types.Project, error) {
+	if userID == nil || rowID == nil {
+		return types.Checklist{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or rowID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	row, err := repository.GetRow(ctx, rowID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Checklist{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("row with id: %s not found", *rowID)))
+	} else if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if exists, err := repository.ChecklistExists(ctx, rowID); err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	} else if exists {
+		return types.Checklist{}, types.Project{}, utils.NewBadRequestError(errors.New("checklist already exists"))
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Checklist{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create checklist"))
+	}
+
+	checklist, err := repository.CreateChecklist(ctx, &types.Checklist{
+		ID:    uuid.New().String(),
+		RowID: *rowID,
+	})
+
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return checklist, project, nil
+}
+
+func DeleteChecklist(userID *string, checklistID *string) (types.Project, error) {
+	if userID == nil || checklistID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or checklistID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, checklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", *checklistID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete checklist"))
+	}
+
+	err = repository.DeleteChecklist(ctx, checklistID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
