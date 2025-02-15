@@ -80,7 +80,7 @@ func ValidateJson[T any]() func(http.Handler) http.Handler {
 				utils.HandleError(w, utils.NewBadRequestError(errors.New("empty body")))
 				return
 			} else if err != nil {
-				utils.HandleError(w, err)
+				utils.HandleError(w, utils.NewBadRequestError(err))
 				return
 			}
 

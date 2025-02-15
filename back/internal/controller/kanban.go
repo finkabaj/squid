@@ -62,6 +62,12 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 
 		r.Post("/checklist/{row_id}", c.createChecklist)
 		r.Delete("/checklist/{checklist_id}", c.deleteChecklist)
+
+		r.With(middleware.ValidateJson[types.CreatePoint]()).Post("/checklist/point", c.createPoint)
+		r.With(middleware.ValidateJson[types.UpdatePoint]()).Patch("/checklist/point/{point_id}", c.updatePoint)
+		r.Patch("/checklist/point/status/{point_id}", c.updatePointStatus)
+		r.Delete("/checklist/point/{point_id}", c.deletePoint)
+		r.Get("/checklist/points/{checklist_id}", c.getPoints)
 	})
 
 	kanbanControllerInitialized = true
@@ -714,4 +720,135 @@ func (c *KanbanController) deleteChecklist(w http.ResponseWriter, r *http.Reques
 	projectUsers = append(projectUsers, project.CreatorID)
 
 	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanChecklistDeletedEvent, "checklist deleted", nil, projectUsers)
+}
+
+func (c *KanbanController) createPoint(w http.ResponseWriter, r *http.Request) {
+	createPoint, ok := middleware.JsonFromContext(r.Context()).(types.CreatePoint)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get createPoint from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	point, project, err := service.CreatePoint(&user.ID, &createPoint)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, point); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal point")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanPointCreatedEvent, "point created", point, projectUsers)
+}
+
+func (c *KanbanController) updatePoint(w http.ResponseWriter, r *http.Request) {
+	updatePoint, ok := middleware.JsonFromContext(r.Context()).(types.UpdatePoint)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get updatePoint from context")))
+		return
+	}
+
+	pointID := chi.URLParam(r, "point_id")
+	if pointID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("point id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	point, project, err := service.UpdatePoint(&user.ID, &pointID, &updatePoint)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, point); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal point")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanPointUpdatedEvent, "point updated", point, projectUsers)
+}
+
+func (c *KanbanController) updatePointStatus(w http.ResponseWriter, r *http.Request) {
+	pointID := chi.URLParam(r, "point_id")
+	if pointID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("point id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	point, project, err := service.UpdatePointStatus(&user.ID, &pointID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, point); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal point")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanPointUpdatedEvent, "point updated", point, projectUsers)
+}
+
+func (c *KanbanController) deletePoint(w http.ResponseWriter, r *http.Request) {
+	pointID := chi.URLParam(r, "point_id")
+	if pointID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("point id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeletePoint(&user.ID, &pointID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "point deleted"}); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal okResponse")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanPointDeletedEvent, "point deleted", nil, projectUsers)
+}
+
+func (c *KanbanController) getPoints(w http.ResponseWriter, r *http.Request) {
+	checklistID := chi.URLParam(r, "checklist_id")
+	if checklistID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("checklist id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	points, err := service.GetPoints(&user.ID, &checklistID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, points); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal points")))
+		return
+	}
 }

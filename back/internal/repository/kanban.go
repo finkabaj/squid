@@ -975,3 +975,86 @@ func ChecklistExists(ctx context.Context, rowID *string) (bool, error) {
 
 	return check != nil, nil
 }
+
+func CreatePoint(ctx context.Context, id *string, createPoint *types.CreatePoint) (types.Point, error) {
+	if createPoint == nil || id == nil {
+		return types.Point{}, errors.New("createPoint and id must not be nil")
+	}
+
+	point, err := queryOneReturning[types.Point](ctx, `
+        INSERT INTO "points"
+        ("id", "checklistID", "name", "description", "completed")
+        VALUES ($1, $2, $3, $4, false)
+        RETURNING *
+    `, id, createPoint.ChecklistID, createPoint.Name, createPoint.Description)
+
+	return point, errors.WithStack(err)
+}
+
+func UpdatePoint(ctx context.Context, id *string, updatePoint *types.UpdatePoint, updateStatus bool) (types.Point, error) {
+	if updatePoint == nil || id == nil {
+		return types.Point{}, errors.New("updatePoint and id must not be nil")
+	}
+
+	if updateStatus {
+		point, err := queryOneReturning[types.Point](ctx, `
+            UPDATE "points"
+            SET "completed" = $1, "completedAt" = $2, "completedBy" = $3
+            WHERE "id" = $4
+            RETURNING *
+        `, updatePoint.Completed, updatePoint.CompletedAt, updatePoint.CompletedBy, id)
+
+		return point, errors.WithStack(err)
+	} else {
+		point, err := queryOneReturning[types.Point](ctx, `
+        UPDATE "points"
+        SET name=coalesce($1, name),
+            description=coalesce($2, description)
+        WHERE "id"=$3
+        RETURNING *
+    `, updatePoint.Name, updatePoint.Description, id)
+
+		return point, errors.WithStack(err)
+	}
+}
+
+func DeletePoint(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "points" WHERE "id" = $1
+    `, id)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+func GetPoints(ctx context.Context, checklistID *string) ([]types.Point, error) {
+	if checklistID == nil {
+		return []types.Point{}, errors.New("checklistID must not be nil")
+	}
+
+	points, err := queryReturning[types.Point](ctx, `SELECT * FROM "points" WHERE "checklistID" = $1 ORDER BY "completed" ASC`, checklistID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return []types.Point{}, errors.WithStack(err)
+	}
+
+	return points, nil
+}
+
+func GetPoint(ctx context.Context, id *string) (types.Point, error) {
+	if id == nil {
+		return types.Point{}, errors.New("id must not be nil")
+	}
+
+	point, err := queryOneReturning[types.Point](ctx, `
+        SELECT * FROM "points" WHERE "id" = $1
+    `, id)
+
+	return point, errors.WithStack(err)
+}

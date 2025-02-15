@@ -246,27 +246,31 @@ type Checklist struct {
 }
 
 type Point struct {
-	ChecklistID string     `json:"check_list_id"`
+	ChecklistID string     `json:"checklist_id"`
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
 	Completed   bool       `json:"completed"`
 	CompletedAt *time.Time `json:"completed_at"`
-	CompletedBy string     `json:"completed_by"`
+	CompletedBy *string    `json:"completed_by"`
 }
 
 type CreatePoint struct {
 	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	ChecklistID string `json:"check_list_id" validate:"required,uuid"`
+	ChecklistID string `json:"checklist_id" validate:"required,uuid"`
 	Name        string `json:"name" validate:"required,min=3,max=50"`
 	Description string `json:"description" validate:"required,min=3,max=100"`
 }
 
 type UpdatePoint struct {
-	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	ChecklistID string `json:"check_list_id" validate:"required,uuid"`
-	Name        string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Description string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
+	ProjectID   string  `json:"project_id" validate:"required,uuid"`
+	ChecklistID string  `json:"checklist_id" validate:"required,uuid"`
+	Name        *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Description *string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
+
+	Completed   *bool      `json:"-"`
+	CompletedBy *string    `json:"-"`
+	CompletedAt *time.Time `json:"-"`
 }
 
 type CommentSection struct {

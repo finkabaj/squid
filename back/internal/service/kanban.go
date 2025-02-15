@@ -1112,3 +1112,225 @@ func DeleteChecklist(userID *string, checklistID *string) (types.Project, error)
 
 	return project, nil
 }
+
+func CreatePoint(userID *string, createPoint *types.CreatePoint) (types.Point, types.Project, error) {
+	if userID == nil || createPoint == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createPoint is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, &createPoint.ChecklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", createPoint.ChecklistID)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create point"))
+	}
+
+	id := uuid.New().String()
+
+	point, err := repository.CreatePoint(ctx, &id, createPoint)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return point, project, nil
+}
+
+func UpdatePoint(userID *string, id *string, updatePoint *types.UpdatePoint) (types.Point, types.Project, error) {
+	if userID == nil || id == nil || updatePoint == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or id or updatePoint is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &updatePoint.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update point"))
+	}
+
+	point, err := repository.UpdatePoint(ctx, id, updatePoint, false)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return point, project, nil
+}
+
+func UpdatePointStatus(userID *string, id *string) (types.Point, types.Project, error) {
+	if userID == nil || id == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or id is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	point, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	checklist, err := repository.GetChecklist(ctx, &point.ChecklistID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	var pointInfo types.UpdatePoint
+	completed := !point.Completed
+	pointInfo.Completed = &completed
+	if point.Completed {
+		pointInfo.CompletedAt = nil
+		pointInfo.CompletedBy = nil
+	} else {
+		now := time.Now()
+		pointInfo.CompletedAt = &now
+		pointInfo.CompletedBy = userID
+	}
+
+	updatedPoint, err := repository.UpdatePoint(ctx, id, &pointInfo, true)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedPoint, project, nil
+}
+
+func DeletePoint(userID *string, id *string) (types.Project, error) {
+	if userID == nil || id == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or id is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	point, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	checklist, err := repository.GetChecklist(ctx, &point.ChecklistID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete point"))
+	}
+
+	err = repository.DeletePoint(ctx, id)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func GetPoints(userID *string, checklistID *string) ([]types.Point, error) {
+	if userID == nil || checklistID == nil {
+		return []types.Point{}, utils.NewBadRequestError(errors.New("userID or checklistID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, checklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.Point{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", *checklistID)))
+	} else if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return []types.Point{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	points, err := repository.GetPoints(ctx, checklistID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+
+	return points, nil
+}
