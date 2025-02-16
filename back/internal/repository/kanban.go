@@ -536,7 +536,7 @@ func GetKanbanColumnLabels(ctx context.Context, projectID *string) ([]types.Kanb
     `, projectID)
 }
 
-func CreateKanbanRow(ctx context.Context, id *string, userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, error) {
+func CreateKanbanRow(ctx context.Context, id *string, commentSectionID *string, userID *string, createRow *types.CreateKanbanRow) (types.KanbanRow, error) {
 	if id == nil || userID == nil || createRow == nil {
 		return types.KanbanRow{}, errors.New("id, userID and createRow must not be nil")
 	}
@@ -560,6 +560,20 @@ func CreateKanbanRow(ctx context.Context, id *string, userID *string, createRow 
 			&kanbanRow.UpdatedAt, &kanbanRow.DueDate); err != nil {
 			return types.KanbanRow{}, errors.WithStack(err)
 		}
+
+		row = tx.QueryRow(ctx, `
+            INSERT INTO "commentSections"
+            ("id", "rowID", "canComment")
+            VALUES ($1, $2, $3)
+            RETURNING *
+        `, commentSectionID, id, true)
+
+		var commentSection types.CommentSection
+		if err := row.Scan(&commentSection.ID, &commentSection.RowID, &commentSection.CanComment); err != nil {
+			return types.KanbanRow{}, errors.WithStack(err)
+		}
+
+		kanbanRow.Comments = &commentSection
 
 		if len(createRow.AssignedUsersIDs) > 0 {
 			assignee := make([][]interface{}, len(createRow.AssignedUsersIDs))
@@ -1057,4 +1071,97 @@ func GetPoint(ctx context.Context, id *string) (types.Point, error) {
     `, id)
 
 	return point, errors.WithStack(err)
+}
+
+func ChangeCanComment(ctx context.Context, id *string) (types.CommentSection, error) {
+	if id == nil {
+		return types.CommentSection{}, errors.New("id must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `
+        UPDATE "commentSections"
+        SET "canComment" = NOT "canComment"
+        WHERE "id" = $1
+        RETURNING *
+    `, id)
+
+	var commentSection types.CommentSection
+	if err := row.Scan(&commentSection.ID, &commentSection.RowID, &commentSection.CanComment); err != nil {
+		return types.CommentSection{}, errors.WithStack(err)
+	}
+
+	return commentSection, nil
+}
+
+func CreateComment(ctx context.Context, userID, id *string, createComment *types.CreateComment) (types.Comment, error) {
+	if createComment == nil || id == nil {
+		return types.Comment{}, errors.New("createComment and id must not be nil")
+	}
+
+	comment, err := queryOneReturning[types.Comment](ctx, `
+        INSERT INTO "comments"
+        ("id", "commentSectionID", "userID", "text")
+        VALUES ($1, $2, $3, $4)
+        RETURNING *
+    `, id, createComment.CommentSectionID, userID, createComment.Text)
+
+	return comment, errors.WithStack(err)
+}
+
+func DeleteComment(ctx context.Context, id *string) error {
+	if id == nil {
+		return errors.New("id must not be nil")
+	}
+
+	_, err := queryOneReturning[any](ctx, `
+        DELETE FROM "comments" WHERE "id" = $1
+    `, id)
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
+}
+
+func GetComments(ctx context.Context, commentSectionID *string) ([]types.Comment, error) {
+	if commentSectionID == nil {
+		return []types.Comment{}, errors.New("commentSectionID must not be nil")
+	}
+
+	comments, err := queryReturning[types.Comment](ctx, `SELECT * FROM "comments" WHERE "commentSectionID" = $1`, commentSectionID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return []types.Comment{}, errors.WithStack(err)
+	}
+
+	return comments, nil
+}
+
+func GetCommentSection(ctx context.Context, id *string) (types.CommentSection, error) {
+	if id == nil {
+		return types.CommentSection{}, errors.New("id must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `
+        SELECT * FROM "commentSections" WHERE "id" = $1
+    `, id)
+
+	var CommentSection types.CommentSection
+	if err := row.Scan(&CommentSection.ID, &CommentSection.RowID, &CommentSection.CanComment); err != nil {
+		return types.CommentSection{}, errors.WithStack(err)
+	}
+
+	return CommentSection, nil
+}
+
+func GetComment(ctx context.Context, id *string) (types.Comment, error) {
+	if id == nil {
+		return types.Comment{}, errors.New("id must not be nil")
+	}
+
+	comment, err := queryOneReturning[types.Comment](ctx, `
+        SELECT * FROM "comments" WHERE "id" = $1
+    `, id)
+
+	return comment, errors.WithStack(err)
 }

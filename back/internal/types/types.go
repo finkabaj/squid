@@ -278,7 +278,7 @@ type CommentSection struct {
 	RowID      string `json:"row_id"`
 	CanComment bool   `json:"can_comment"`
 
-	Comments *[]Comment `json:"comments,omitempty"`
+	Comments *[]Comment `json:"comments"`
 }
 
 type Comment struct {
@@ -290,7 +290,6 @@ type Comment struct {
 }
 
 type CreateComment struct {
-	ProjectID        string `json:"project_id" validate:"required,uuid"`
 	CommentSectionID string `json:"comment_section_id" validate:"required,uuid"`
 	Text             string `json:"text" validate:"required,min=3,max=200"`
 }

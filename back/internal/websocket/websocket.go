@@ -36,6 +36,9 @@ const (
 	KanbanPointCreatedEvent       EventType = "KANBAN_POINT_CREATED"
 	KanbanPointUpdatedEvent       EventType = "KANBAN_POINT_UPDATED"
 	KanbanPointDeletedEvent       EventType = "KANBAN_POINT_DELETED"
+	KanbanCanCommentEvent         EventType = "KANBAN_CAN_COMMENT"
+	KanbanCommendDeletedEvent     EventType = "KANBAN_COMMENT_DELETED"
+	KanbanCommentCreatedEvent     EventType = "KANBAN_COMMENT_CREATED"
 )
 
 type Event struct {

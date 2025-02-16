@@ -68,6 +68,12 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 		r.Patch("/checklist/point/status/{point_id}", c.updatePointStatus)
 		r.Delete("/checklist/point/{point_id}", c.deletePoint)
 		r.Get("/checklist/points/{checklist_id}", c.getPoints)
+
+		r.Patch("/comment/can_comment/{comment_section_id}", c.updateCanComment)
+
+		r.With(middleware.ValidateJson[types.CreateComment]()).Post("/comment", c.createComment)
+		r.Delete("/comment/{comment_id}", c.deleteComment)
+		r.Get("/comments/{comment_section_id}", c.getComments)
 	})
 
 	kanbanControllerInitialized = true
@@ -849,6 +855,105 @@ func (c *KanbanController) getPoints(w http.ResponseWriter, r *http.Request) {
 
 	if err := utils.MarshalBody(w, http.StatusOK, points); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal points")))
+		return
+	}
+}
+
+func (c *KanbanController) updateCanComment(w http.ResponseWriter, r *http.Request) {
+	commentSectionID := chi.URLParam(r, "comment_section_id")
+	if commentSectionID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("comment section id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	canComment, project, err := service.UpdateCanComment(&user.ID, &commentSectionID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, canComment); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal project")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanCanCommentEvent, "can comment updated", canComment, projectUsers)
+}
+
+func (c *KanbanController) createComment(w http.ResponseWriter, r *http.Request) {
+	createComment, ok := middleware.JsonFromContext(r.Context()).(types.CreateComment)
+	if !ok {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to get createComment from context")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	comment, project, err := service.CreateComment(&user.ID, &createComment)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, comment); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal comment")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanCommentCreatedEvent, "comment created", comment, projectUsers)
+}
+
+func (c *KanbanController) deleteComment(w http.ResponseWriter, r *http.Request) {
+	commentID := chi.URLParam(r, "comment_id")
+	if commentID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("comment id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	project, err := service.DeleteComment(&user.ID, &commentID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, utils.OkResponse{Message: "comment deleted"}); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal project")))
+		return
+	}
+
+	projectUsers := append(project.AdminIDs, project.MembersIDs...)
+	projectUsers = append(projectUsers, project.CreatorID)
+
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanCommendDeletedEvent, "comment deleted", nil, projectUsers)
+}
+
+func (c *KanbanController) getComments(w http.ResponseWriter, r *http.Request) {
+	commentSectionID := chi.URLParam(r, "comment_section_id")
+	if commentSectionID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("comment section id is required")))
+		return
+	}
+
+	user := middleware.UserFromContext(r.Context())
+
+	comments, err := service.GetComments(&user.ID, &commentSectionID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err := utils.MarshalBody(w, http.StatusOK, comments); err != nil {
+		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal comments")))
 		return
 	}
 }

@@ -665,7 +665,8 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 	}
 
 	id := uuid.New().String()
-	row, err := repository.CreateKanbanRow(ctx, &id, userID, createRow)
+	commentSectionID := uuid.New().String()
+	row, err := repository.CreateKanbanRow(ctx, &id, &commentSectionID, userID, createRow)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
@@ -1333,4 +1334,177 @@ func GetPoints(userID *string, checklistID *string) ([]types.Point, error) {
 	}
 
 	return points, nil
+}
+
+func UpdateCanComment(userID *string, commentSectionID *string) (bool, types.Project, error) {
+	if userID == nil || commentSectionID == nil {
+		return false, types.Project{}, utils.NewBadRequestError(errors.New("userID or commentSectionID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, commentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", *commentSectionID)))
+	} else if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return false, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update comment section"))
+	}
+
+	commentSection, err = repository.ChangeCanComment(ctx, commentSectionID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return commentSection.CanComment, project, nil
+}
+
+func GetComments(userID *string, commentSectionID *string) ([]types.Comment, error) {
+	if userID == nil || commentSectionID == nil {
+		return []types.Comment{}, utils.NewBadRequestError(errors.New("userID or commentSectionID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, commentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.Comment{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", *commentSectionID)))
+	} else if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return []types.Comment{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	comments, err := repository.GetComments(ctx, commentSectionID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+
+	return comments, nil
+}
+
+func CreateComment(userID *string, createComment *types.CreateComment) (types.Comment, types.Project, error) {
+	if userID == nil || createComment == nil {
+		return types.Comment{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createComment is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, &createComment.CommentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Comment{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", createComment.CommentSectionID)))
+	} else if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if !commentSection.CanComment {
+		return types.Comment{}, types.Project{}, utils.NewBadRequestError(errors.New("this comment section can't be commented"))
+	}
+
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.Comment{}, types.Project{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	id := uuid.New().String()
+	comment, err := repository.CreateComment(ctx, userID, &id, createComment)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return comment, project, nil
+}
+
+func DeleteComment(userID *string, commentID *string) (types.Project, error) {
+	if userID == nil || commentID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or commentID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	comment, err := repository.GetComment(ctx, commentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment with id: %s not found", *commentID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	commentSection, err := repository.GetCommentSection(ctx, &comment.CommentSectionID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		comment.UserID != *userID {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("you cannot delete this comment"))
+	}
+
+	err = repository.DeleteComment(ctx, commentID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
 }
