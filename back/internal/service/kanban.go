@@ -638,8 +638,6 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 		}
 	}
 
-	// TODO: check if label exists
-
 	rows, err := repository.GetRows(ctx, &createRow.ColumnID)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
@@ -667,10 +665,28 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 	}
 
 	id := uuid.New().String()
-	row, err := repository.CreateKanbanRow(ctx, &id, userID, createRow)
+	commentSectionID := uuid.New().String()
+	row, err := repository.CreateKanbanRow(ctx, &id, &commentSectionID, userID, createRow)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
+
+	err = repository.CreateHistoryPoint(ctx, &types.HistoryPoint{
+		ID:     uuid.New().String(),
+		RowID:  row.ID,
+		UserID: *userID,
+		Text:   "created",
+	})
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	historyPoints, err := repository.GetHistoryPoints(ctx, &row.ID)
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	row.History = &historyPoints
 
 	updatedRows, err := repository.GetRows(ctx, &createRow.ColumnID)
 	if err != nil {
@@ -745,8 +761,6 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 		}
 	}
 
-	// TODO: check if label exists
-
 	if updateRow.Order != nil {
 		rows, err := repository.GetRows(ctx, &updateRow.ColumnID)
 		if err != nil {
@@ -781,7 +795,24 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
 
-	updatedRows, err := repository.GetRows(ctx, &updateRow.ProjectID)
+	err = repository.CreateHistoryPoint(ctx, &types.HistoryPoint{
+		ID:     uuid.NewString(),
+		RowID:  updatedRow.ID,
+		UserID: *userID,
+		Text:   "updated",
+	})
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	historyPoints, err := repository.GetHistoryPoints(ctx, &updatedRow.ID)
+	if err != nil {
+		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	updatedRow.History = &historyPoints
+
+	updatedRows, err := repository.GetRows(ctx, &updateRow.ColumnID)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
 	}
@@ -864,4 +895,616 @@ func GetRows(userID *string, columnID *string) ([]types.KanbanRow, error) {
 	}
 
 	return rows, nil
+}
+
+func CreateRowLabel(userID *string, createRowLabel *types.CreateKanbanRowLabel) (types.KanbanRowLabel, types.Project, error) {
+	if userID == nil || createRowLabel == nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createRowLabel is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, &createRowLabel.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", createRowLabel.ProjectID)))
+	} else if err != nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create row label"))
+	}
+
+	id := uuid.New().String()
+
+	label, err := repository.CreateKanbanRowLabel(ctx, &id, createRowLabel)
+	if err != nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return label, project, nil
+}
+
+func DeleteRowLabel(userID *string, labelID *string) (types.Project, error) {
+	if userID == nil || labelID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or labelID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	label, err := repository.GetKanbanRowLabel(ctx, labelID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("row with id: %s not found", *labelID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &label.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete row label"))
+	}
+
+	err = repository.DeleteKanbanRowLabel(ctx, labelID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func UpdateRowLabel(userID *string, labelID *string, updateLabel *types.UpdateKanbanRowLabel) (types.KanbanRowLabel, types.Project, error) {
+	if userID == nil || labelID == nil || updateLabel == nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or labelID or updateLabel is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if updateLabel.Name == nil && updateLabel.Color == nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewBadRequestError(errors.New("at least one field must be updated"))
+	}
+
+	project, err := repository.GetProject(ctx, &updateLabel.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", updateLabel.ProjectID)))
+	} else if err != nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update row label"))
+	}
+
+	updatedLabel, err := repository.UpdateKanbanRowLabel(ctx, labelID, updateLabel)
+	if err != nil {
+		return types.KanbanRowLabel{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedLabel, project, nil
+}
+
+func GetRowLabels(userID *string, projectID *string) ([]types.KanbanRowLabel, error) {
+	if projectID == nil || userID == nil {
+		return nil, utils.NewBadRequestError(errors.New("projectID or userID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	} else if err != nil {
+		return nil, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return nil, utils.NewUnauthorizedError(errors.New("you cannot fetch labels in a project in which you are not participating"))
+	}
+
+	labels, err := repository.GetKanbanRowLabels(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.KanbanRowLabel{}, nil
+	} else if err != nil {
+		return nil, utils.NewInternalError(err)
+	}
+
+	return labels, nil
+}
+
+func CreateChecklist(userID *string, rowID *string) (types.Checklist, types.Project, error) {
+	if userID == nil || rowID == nil {
+		return types.Checklist{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or rowID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	row, err := repository.GetRow(ctx, rowID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Checklist{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("row with id: %s not found", *rowID)))
+	} else if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if exists, err := repository.ChecklistExists(ctx, rowID); err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	} else if exists {
+		return types.Checklist{}, types.Project{}, utils.NewBadRequestError(errors.New("checklist already exists"))
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Checklist{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create checklist"))
+	}
+
+	checklist, err := repository.CreateChecklist(ctx, &types.Checklist{
+		ID:    uuid.New().String(),
+		RowID: *rowID,
+	})
+
+	if err != nil {
+		return types.Checklist{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return checklist, project, nil
+}
+
+func DeleteChecklist(userID *string, checklistID *string) (types.Project, error) {
+	if userID == nil || checklistID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or checklistID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, checklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", *checklistID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete checklist"))
+	}
+
+	err = repository.DeleteChecklist(ctx, checklistID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func CreatePoint(userID *string, createPoint *types.CreatePoint) (types.Point, types.Project, error) {
+	if userID == nil || createPoint == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createPoint is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, &createPoint.ChecklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", createPoint.ChecklistID)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can create point"))
+	}
+
+	id := uuid.New().String()
+
+	point, err := repository.CreatePoint(ctx, &id, createPoint)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return point, project, nil
+}
+
+func UpdatePoint(userID *string, id *string, updatePoint *types.UpdatePoint) (types.Point, types.Project, error) {
+	if userID == nil || id == nil || updatePoint == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or id or updatePoint is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	project, err := repository.GetProject(ctx, &updatePoint.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update point"))
+	}
+
+	point, err := repository.UpdatePoint(ctx, id, updatePoint, false)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return point, project, nil
+}
+
+func UpdatePointStatus(userID *string, id *string) (types.Point, types.Project, error) {
+	if userID == nil || id == nil {
+		return types.Point{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or id is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	point, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Point{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	checklist, err := repository.GetChecklist(ctx, &point.ChecklistID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.Point{}, types.Project{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	var pointInfo types.UpdatePoint
+	completed := !point.Completed
+	pointInfo.Completed = &completed
+	if point.Completed {
+		pointInfo.CompletedAt = nil
+		pointInfo.CompletedBy = nil
+	} else {
+		now := time.Now()
+		pointInfo.CompletedAt = &now
+		pointInfo.CompletedBy = userID
+	}
+
+	updatedPoint, err := repository.UpdatePoint(ctx, id, &pointInfo, true)
+	if err != nil {
+		return types.Point{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return updatedPoint, project, nil
+}
+
+func DeletePoint(userID *string, id *string) (types.Project, error) {
+	if userID == nil || id == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or id is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	point, err := repository.GetPoint(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("point with id: %s not found", *id)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	checklist, err := repository.GetChecklist(ctx, &point.ChecklistID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can delete point"))
+	}
+
+	err = repository.DeletePoint(ctx, id)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
+}
+
+func GetPoints(userID *string, checklistID *string) ([]types.Point, error) {
+	if userID == nil || checklistID == nil {
+		return []types.Point{}, utils.NewBadRequestError(errors.New("userID or checklistID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checklist, err := repository.GetChecklist(ctx, checklistID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.Point{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("checklist with id: %s not found", *checklistID)))
+	} else if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &checklist.RowID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return []types.Point{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	points, err := repository.GetPoints(ctx, checklistID)
+	if err != nil {
+		return []types.Point{}, utils.NewInternalError(err)
+	}
+
+	return points, nil
+}
+
+func UpdateCanComment(userID *string, commentSectionID *string) (bool, types.Project, error) {
+	if userID == nil || commentSectionID == nil {
+		return false, types.Project{}, utils.NewBadRequestError(errors.New("userID or commentSectionID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, commentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", *commentSectionID)))
+	} else if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
+		return false, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update comment section"))
+	}
+
+	commentSection, err = repository.ChangeCanComment(ctx, commentSectionID)
+	if err != nil {
+		return false, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return commentSection.CanComment, project, nil
+}
+
+func GetComments(userID *string, commentSectionID *string) ([]types.Comment, error) {
+	if userID == nil || commentSectionID == nil {
+		return []types.Comment{}, utils.NewBadRequestError(errors.New("userID or commentSectionID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, commentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return []types.Comment{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", *commentSectionID)))
+	} else if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return []types.Comment{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	comments, err := repository.GetComments(ctx, commentSectionID)
+	if err != nil {
+		return []types.Comment{}, utils.NewInternalError(err)
+	}
+
+	return comments, nil
+}
+
+func CreateComment(userID *string, createComment *types.CreateComment) (types.Comment, types.Project, error) {
+	if userID == nil || createComment == nil {
+		return types.Comment{}, types.Project{}, utils.NewBadRequestError(errors.New("userID or createComment is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	commentSection, err := repository.GetCommentSection(ctx, &createComment.CommentSectionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Comment{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment section with id: %s not found", createComment.CommentSectionID)))
+	} else if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if !commentSection.CanComment {
+		return types.Comment{}, types.Project{}, utils.NewBadRequestError(errors.New("this comment section can't be commented"))
+	}
+
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.Comment{}, types.Project{}, utils.NewUnauthorizedError(errors.New("you not participate in this project"))
+	}
+
+	id := uuid.New().String()
+	comment, err := repository.CreateComment(ctx, userID, &id, createComment)
+	if err != nil {
+		return types.Comment{}, types.Project{}, utils.NewInternalError(err)
+	}
+
+	return comment, project, nil
+}
+
+func DeleteComment(userID *string, commentID *string) (types.Project, error) {
+	if userID == nil || commentID == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("userID or commentID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	comment, err := repository.GetComment(ctx, commentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("comment with id: %s not found", *commentID)))
+	} else if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	commentSection, err := repository.GetCommentSection(ctx, &comment.CommentSectionID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	row, err := repository.GetRow(ctx, &commentSection.RowID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	column, err := repository.GetKanbanColumn(ctx, &row.ColumnID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	project, err := repository.GetProject(ctx, &column.ProjectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		comment.UserID != *userID {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("you cannot delete this comment"))
+	}
+
+	err = repository.DeleteComment(ctx, commentID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+
+	return project, nil
 }

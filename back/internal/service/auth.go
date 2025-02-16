@@ -95,7 +95,6 @@ func Login(login *types.Login) (types.AuthUser, error) {
 				Status:  http.StatusUnauthorized,
 				Message: "Invalid email or password",
 			},
-			OriginalError: err,
 		}
 	} else if err != nil {
 		return types.AuthUser{}, utils.NewInternalError(err)
@@ -107,7 +106,6 @@ func Login(login *types.Login) (types.AuthUser, error) {
 				Status:  http.StatusUnauthorized,
 				Message: "Invalid email or password",
 			},
-			OriginalError: err,
 		}
 	}
 

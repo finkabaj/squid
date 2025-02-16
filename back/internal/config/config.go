@@ -1,9 +1,10 @@
 package config
 
 import (
-	"github.com/pkg/errors"
 	"os"
 	"strconv"
+
+	"github.com/pkg/errors"
 )
 
 type Config struct {
