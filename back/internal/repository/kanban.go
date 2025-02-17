@@ -573,7 +573,7 @@ func CreateKanbanRow(ctx context.Context, id *string, commentSectionID *string, 
 			return types.KanbanRow{}, errors.WithStack(err)
 		}
 
-		kanbanRow.Comments = &commentSection
+		kanbanRow.CommentSection = &commentSection
 
 		if len(createRow.AssignedUsersIDs) > 0 {
 			assignee := make([][]interface{}, len(createRow.AssignedUsersIDs))
@@ -956,6 +956,29 @@ func GetChecklist(ctx context.Context, checklistID *string) (types.Checklist, er
 	return checklist, nil
 }
 
+func GetChecklistByRowID(ctx context.Context, rowID *string) (types.Checklist, error) {
+	if rowID == nil {
+		return types.Checklist{}, errors.New("rowID must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `SELECT * FROM "checklists" WHERE "rowID" = $1`, rowID)
+
+	var checklist types.Checklist
+	err := row.Scan(&checklist.ID, &checklist.RowID)
+	if err != nil {
+		return types.Checklist{}, errors.WithStack(err)
+	}
+
+	points, err := queryReturning[types.Point](ctx, `SELECT * FROM "points" WHERE "checklistID" = $1 ORDER BY "completed" ASC`, checklist.ID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return types.Checklist{}, errors.WithStack(err)
+	}
+
+	checklist.Points = &points
+
+	return checklist, nil
+}
+
 func DeleteChecklist(ctx context.Context, id *string) error {
 	if id == nil {
 		return errors.New("id must not be nil")
@@ -1137,14 +1160,31 @@ func GetComments(ctx context.Context, commentSectionID *string) ([]types.Comment
 	return comments, nil
 }
 
-func GetCommentSection(ctx context.Context, id *string) (types.CommentSection, error) {
-	if id == nil {
+func GetCommentSection(ctx context.Context, commentSectionID *string) (types.CommentSection, error) {
+	if commentSectionID == nil {
 		return types.CommentSection{}, errors.New("id must not be nil")
 	}
 
 	row := pool.QueryRow(ctx, `
         SELECT * FROM "commentSections" WHERE "id" = $1
-    `, id)
+    `, commentSectionID)
+
+	var CommentSection types.CommentSection
+	if err := row.Scan(&CommentSection.ID, &CommentSection.RowID, &CommentSection.CanComment); err != nil {
+		return types.CommentSection{}, errors.WithStack(err)
+	}
+
+	return CommentSection, nil
+}
+
+func GetCommentSectionByRowID(ctx context.Context, rowID *string) (types.CommentSection, error) {
+	if rowID == nil {
+		return types.CommentSection{}, errors.New("rowID must not be nil")
+	}
+
+	row := pool.QueryRow(ctx, `
+        SELECT * FROM "commentSections" WHERE "rowID" = $1
+    `, rowID)
 
 	var CommentSection types.CommentSection
 	if err := row.Scan(&CommentSection.ID, &CommentSection.RowID, &CommentSection.CanComment); err != nil {

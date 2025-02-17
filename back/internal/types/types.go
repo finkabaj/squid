@@ -174,10 +174,10 @@ type KanbanRow struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 	DueDate          *time.Time `json:"due_date"`
 
-	Label     *KanbanRowLabel `json:"label,omitempty"`
-	History   *[]HistoryPoint `json:"history,omitempty"`
-	Checklist *Checklist      `json:"check_list,omitempty"`
-	Comments  *CommentSection `json:"comments,omitempty"`
+	Label          *KanbanRowLabel `json:"label,omitempty"`
+	History        *[]HistoryPoint `json:"history,omitempty"`
+	Checklist      *Checklist      `json:"check_list,omitempty"`
+	CommentSection *CommentSection `json:"comment_section,omitempty"`
 }
 
 type KanbanRowAssignedUser struct {
