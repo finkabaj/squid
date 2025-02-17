@@ -80,6 +80,40 @@ func GetProject(userID *string, projectID *string) (types.Project, error) {
 	} else if err != nil {
 		return types.Project{}, utils.NewInternalError(err)
 	}
+	columns, err := repository.GetColumns(ctx, projectID)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
+	}
+	for i, column := range columns {
+		rows, err := repository.GetRows(ctx, &column.ID)
+		if err != nil {
+			return types.Project{}, utils.NewInternalError(err)
+		}
+		for j, row := range rows {
+			checklist, err := repository.GetChecklistByRowID(ctx, &row.ID)
+			if errors.Is(err, pgx.ErrNoRows) {
+				row.Checklist = nil
+			} else if err != nil {
+				return types.Project{}, utils.NewInternalError(err)
+			} else {
+				row.Checklist = &checklist
+			}
+			commentSection, err := repository.GetCommentSectionByRowID(ctx, &row.ID)
+			if err != nil {
+				return types.Project{}, utils.NewInternalError(err)
+			}
+			row.CommentSection = &commentSection
+			comments, err := repository.GetComments(ctx, &commentSection.ID)
+			if err != nil {
+				return types.Project{}, utils.NewInternalError(err)
+			}
+			row.CommentSection.Comments = &comments
+			rows[j] = row
+		}
+		columns[i].Rows = &rows
+	}
+
+	project.Columns = &columns
 
 	if project.CreatorID != *userID &&
 		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
