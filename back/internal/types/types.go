@@ -174,10 +174,10 @@ type KanbanRow struct {
 	UpdatedAt        time.Time  `json:"updated_at"`
 	DueDate          *time.Time `json:"due_date"`
 
-	Label     *KanbanRowLabel `json:"label,omitempty"`
-	History   *[]HistoryPoint `json:"history,omitempty"`
-	CheckList *CheckList      `json:"check_list,omitempty"`
-	Comments  *CommentSection `json:"comments,omitempty"`
+	Label          *KanbanRowLabel `json:"label,omitempty"`
+	History        *[]HistoryPoint `json:"history,omitempty"`
+	Checklist      *Checklist      `json:"check_list,omitempty"`
+	CommentSection *CommentSection `json:"comment_section,omitempty"`
 }
 
 type KanbanRowAssignedUser struct {
@@ -235,10 +235,10 @@ type HistoryPoint struct {
 	ID        string    `json:"id"`
 	UserID    string    `json:"user_id"`
 	Text      string    `json:"text"`
-	Timestamp time.Time `json:"timestamp"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
-type CheckList struct {
+type Checklist struct {
 	ID    string `json:"id"`
 	RowID string `json:"row_id"`
 
@@ -246,27 +246,31 @@ type CheckList struct {
 }
 
 type Point struct {
-	CheckListID string     `json:"check_list_id"`
+	ChecklistID string     `json:"checklist_id"`
 	ID          string     `json:"id"`
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
 	Completed   bool       `json:"completed"`
 	CompletedAt *time.Time `json:"completed_at"`
-	CompletedBy string     `json:"completed_by"`
+	CompletedBy *string    `json:"completed_by"`
 }
 
 type CreatePoint struct {
 	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	CheckListID string `json:"check_list_id" validate:"required,uuid"`
+	ChecklistID string `json:"checklist_id" validate:"required,uuid"`
 	Name        string `json:"name" validate:"required,min=3,max=50"`
 	Description string `json:"description" validate:"required,min=3,max=100"`
 }
 
 type UpdatePoint struct {
-	ProjectID   string `json:"project_id" validate:"required,uuid"`
-	CheckListID string `json:"check_list_id" validate:"required,uuid"`
-	Name        string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Description string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
+	ProjectID   string  `json:"project_id" validate:"required,uuid"`
+	ChecklistID string  `json:"checklist_id" validate:"required,uuid"`
+	Name        *string `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Description *string `json:"description,omitempty" validate:"omitempty,min=3,max=100"`
+
+	Completed   *bool      `json:"-"`
+	CompletedBy *string    `json:"-"`
+	CompletedAt *time.Time `json:"-"`
 }
 
 type CommentSection struct {
@@ -274,7 +278,7 @@ type CommentSection struct {
 	RowID      string `json:"row_id"`
 	CanComment bool   `json:"can_comment"`
 
-	Comments *[]Comment `json:"comments,omitempty"`
+	Comments *[]Comment `json:"comments"`
 }
 
 type Comment struct {
@@ -286,7 +290,6 @@ type Comment struct {
 }
 
 type CreateComment struct {
-	ProjectID        string `json:"project_id" validate:"required,uuid"`
 	CommentSectionID string `json:"comment_section_id" validate:"required,uuid"`
 	Text             string `json:"text" validate:"required,min=3,max=200"`
 }

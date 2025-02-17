@@ -335,18 +335,18 @@ func setup() (err error) {
 	}
 
 	if _, err = transaction.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS "checkLists" (
+		CREATE TABLE IF NOT EXISTS "checklists" (
 		    "id" VARCHAR(255) PRIMARY KEY,
-		    "rowID" VARCHAR(255) NOT NULL REFERENCES "kanbanRows"("id") ON DELETE CASCADE
+		    "rowID" VARCHAR(255) UNIQUE NOT NULL REFERENCES "kanbanRows"("id") ON DELETE CASCADE
 		);
 	`); err != nil {
-		return errors.Wrap(err, "error creating checkLists table")
+		return errors.Wrap(err, "error creating checklists table")
 	}
 
 	if _, err = transaction.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS "points" (
 			"id" VARCHAR(255) PRIMARY KEY,
-		    "checkListID" VARCHAR(255) NOT NULL REFERENCES "checkLists"("id") ON DELETE CASCADE,
+		    "checklistID" VARCHAR(255) NOT NULL REFERENCES "checklists"("id") ON DELETE CASCADE,
 		    "name" VARCHAR(50) NOT NULL,
 		    "description" VARCHAR(255) NOT NULL,
 		    "completed" BOOLEAN NOT NULL DEFAULT FALSE,
@@ -354,7 +354,7 @@ func setup() (err error) {
 		    "completedBy" VARCHAR(255) REFERENCES "users"("id")
 		);
 
-		CREATE INDEX IF NOT EXISTS idx_points_checklist ON "points"("checkListID");
+		CREATE INDEX IF NOT EXISTS idx_points_checklist ON "points"("checklistID");
 	`); err != nil {
 		return errors.Wrap(err, "error creating points table")
 	}
