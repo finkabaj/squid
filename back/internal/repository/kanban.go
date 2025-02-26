@@ -175,18 +175,20 @@ func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateP
 	})
 }
 
-func DeleteProject(ctx context.Context, userID *string, projectID *string) error {
-	if userID == nil || projectID == nil {
-		return errors.New("Id must not be nil")
+func DeleteProject(ctx context.Context, projectID *string) error {
+	if projectID == nil {
+		return errors.New("projectID must not be nil")
 	}
 
 	_, err := queryReturning[any](ctx, `
-    		DELETE FROM "projectMembers" WHERE "projectID" = $1;
-    		DELETE FROM "projectAdmins" WHERE "projectID" = $1;
     		DELETE FROM "projects" WHERE "id" = $1;
 		`, projectID)
 
-	return errors.WithStack(err)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.WithStack(err)
+	}
+
+	return nil
 }
 
 func CreateKanbanColumn(ctx context.Context, id *string, projectID *string, createColumn *types.CreateKanbanColumn) (types.KanbanColumn, error) {

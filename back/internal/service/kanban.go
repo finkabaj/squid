@@ -227,9 +227,9 @@ func DeleteProject(user *types.User, projectID *string) (types.Project, error) {
 		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can delete project"))
 	}
 
-	err = repository.DeleteProject(ctx, &user.ID, projectID)
+	err = repository.DeleteProject(ctx, projectID)
 
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil {
 		return types.Project{}, utils.NewInternalError(err)
 	}
 
