@@ -672,6 +672,16 @@ func CreateRow(userID *string, createRow *types.CreateKanbanRow) (types.KanbanRo
 		}
 	}
 
+	if createRow.LabelID != nil {
+		_, err := repository.GetKanbanRowLabel(ctx, createRow.LabelID)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *createRow.LabelID)))
+		} else if err != nil {
+			return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+		}
+	}
+
 	rows, err := repository.GetRows(ctx, &createRow.ColumnID)
 	if err != nil {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
@@ -776,6 +786,16 @@ func UpdateRow(userID *string, rowID *string, updateRow *types.UpdateKanbanRow) 
 	if project.CreatorID != *userID &&
 		!utils.Have(func(_ int, adminID string) bool { return adminID == *userID }, project.AdminIDs) {
 		return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewUnauthorizedError(errors.New("only admins can update row"))
+	}
+
+	if updateRow.LabelID != nil {
+		_, err := repository.GetKanbanRowLabel(ctx, updateRow.LabelID)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("label with id: %s not found", *updateRow.LabelID)))
+		} else if err != nil {
+			return types.KanbanRow{}, []types.KanbanRow{}, types.Project{}, utils.NewInternalError(err)
+		}
 	}
 
 	if updateRow.AssignedUsersIDs != nil {
