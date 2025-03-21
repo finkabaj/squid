@@ -85,8 +85,10 @@ type ProjectMember struct {
 }
 
 type CreateProject struct {
-	AdminIDs    []string `json:"admin_ids,omitempty" validate:"omitempty,dive,uuid"`
-	MembersIDs  []string `json:"members_ids,omitempty" validate:"omitempty,dive,uuid"`
+	AdminEmails []string `json:"admin_emails,omitempty" validate:"omitempty,dive,email"`
+	MemberEmails []string `json:"member_emails,omitempty" validate:"omitempty,dive,email"`
+	AdminIDs []string `json:"-"`
+	MemberIDs []string `json:"-"`
 	Name        string   `json:"name" validate:"required,min=3,max=50"`
 	Description string   `json:"description" validate:"max=500"`
 }

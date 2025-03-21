@@ -13,44 +13,46 @@ import (
 	"github.com/pkg/errors"
 )
 
-func CreateProject(userID *string, project *types.CreateProject) (types.Project, error) {
-	if userID == nil || project == nil {
-		return types.Project{}, utils.NewBadRequestError(errors.New("userID or project is nil"))
+func CreateProject(user *types.User, project *types.CreateProject) (types.Project, error) {
+	if user == nil || project == nil {
+		return types.Project{}, utils.NewBadRequestError(errors.New("user or project is nil"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	for i, adminID := range project.AdminIDs {
-		if adminID == *userID || utils.Have(func(_ int, memberID string) bool {
-			return memberID == adminID
-		}, project.MembersIDs) {
-			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+	for i, adminEmail := range project.AdminEmails {
+		if adminEmail == user.Email || utils.Have(func(_ int, memberEmail string) bool {
+			return memberEmail == adminEmail
+		}, project.MemberEmails) {
+			return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 		}
 
-		if utils.Have(func(j int, aID string) bool { return i != j && aID == adminID }, project.AdminIDs) {
-			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+		if utils.Have(func(j int, aEmail string) bool { return i != j && aEmail == adminEmail }, project.AdminEmails) {
+			return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 		}
-		_, err := repository.GetUser(ctx, &adminID, nil)
+		admin, err := repository.GetUser(ctx, nil, &adminEmail)
+		project.AdminIDs = append(project.AdminIDs, admin.ID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", adminID)))
+			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with email: %s found", adminEmail)))
 		} else if err != nil {
 			return types.Project{}, utils.NewInternalError(err)
 		}
 	}
 
-	for i, memberID := range project.MembersIDs {
-		if memberID == *userID {
-			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+	for i, memberEmail := range project.MemberEmails {
+		if memberEmail == user.Email {
+			return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 		}
 
-		if utils.Have(func(j int, mID string) bool { return i != j && mID == memberID }, project.MembersIDs) {
-			return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+		if utils.Have(func(j int, mEmail string) bool { return i != j && mEmail == memberEmail }, project.MemberEmails) {
+			return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 		}
 
-		_, err := repository.GetUser(ctx, &memberID, nil)
+		member, err := repository.GetUser(ctx, nil, &memberEmail)
+		project.MemberIDs = append(project.MemberIDs, member.ID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", memberID)))
+			return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with email: %s found", memberEmail)))
 		} else if err != nil {
 			return types.Project{}, utils.NewInternalError(err)
 		}
@@ -58,7 +60,7 @@ func CreateProject(userID *string, project *types.CreateProject) (types.Project,
 
 	id := uuid.New().String()
 
-	newProject, err := repository.CreateProject(ctx, &id, userID, project)
+	newProject, err := repository.CreateProject(ctx, &id, &user.ID, project)
 	if err != nil {
 		return types.Project{}, utils.NewInternalError(err)
 	}

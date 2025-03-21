@@ -103,7 +103,7 @@ func (c *KanbanController) createProject(w http.ResponseWriter, r *http.Request)
 
 	user := middleware.UserFromContext(r.Context())
 
-	newProject, err := service.CreateProject(&user.ID, &projectData)
+	newProject, err := service.CreateProject(&user, &projectData)
 	if err != nil {
 		utils.HandleError(w, err)
 		return

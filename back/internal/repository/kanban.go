@@ -44,10 +44,10 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 			newProject.AdminIDs = project.AdminIDs
 		}
 
-		if len(project.MembersIDs) > 0 {
-			memberRows := make([][]interface{}, len(project.MembersIDs))
+		if len(project.MemberIDs) > 0 {
+			memberRows := make([][]interface{}, len(project.MemberIDs))
 
-			for i, userID := range project.MembersIDs {
+			for i, userID := range project.MemberIDs {
 				memberRows[i] = []interface{}{
 					newProject.ID, userID,
 				}
@@ -57,7 +57,7 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 				return types.Project{}, errors.WithStack(err)
 			}
 
-			newProject.MembersIDs = project.MembersIDs
+			newProject.MembersIDs = project.MemberIDs
 		}
 
 		return newProject, nil
