@@ -143,6 +143,35 @@ func GetProjects(userID *string) ([]types.Project, error) {
 	return projects, nil
 }
 
+func GetProjectUsers(userID *string, projectID *string) (types.ProjectUsers, error) {
+	if userID == nil || projectID == nil {
+		return types.ProjectUsers{}, utils.NewBadRequestError(errors.New("userID or projectID is nil"))
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	project, err := repository.GetProject(ctx, projectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return types.ProjectUsers{}, utils.NewNotFoundError(errors.New(fmt.Sprintf("project with id: %s not found", *projectID)))
+	} else if err != nil {
+		return types.ProjectUsers{}, utils.NewInternalError(err)
+	}
+
+	if project.CreatorID != *userID &&
+		!utils.Have(func(i int, adminID string) bool { return adminID == *userID }, project.AdminIDs) &&
+		!utils.Have(func(i int, memberID string) bool { return memberID == *userID }, project.MembersIDs) {
+		return types.ProjectUsers{}, utils.NewUnauthorizedError(errors.New("you cannot fetch a project in which you are not participating"))
+	}
+
+	users, err := repository.GetProjectUsers(ctx, projectID, &project.CreatorID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return types.ProjectUsers{}, utils.NewInternalError(err)
+	}
+
+	return users, nil
+}
+
 func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProject) (types.Project, error) {
 	if id == nil || user == nil || updateProject == nil {
 		return types.Project{}, utils.NewBadRequestError(errors.New("all parameters must not be nil"))
@@ -151,7 +180,7 @@ func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProj
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if updateProject.Name == nil && updateProject.AdminIDs == nil && updateProject.MembersIDs == nil && updateProject.Description == nil {
+	if updateProject.Name == nil && updateProject.AdminEmails == nil && updateProject.MemberEmails == nil && updateProject.Description == nil {
 		return types.Project{}, utils.NewBadRequestError(errors.New("at least one field must be updated"))
 	}
 
@@ -166,38 +195,43 @@ func UpdateProject(id *string, user *types.User, updateProject *types.UpdateProj
 		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator and admins allowed to update project"))
 	}
 
-	if updateProject.AdminIDs == nil && updateProject.MembersIDs == nil && updateProject.Description == nil && updateProject.Name == nil {
-		return types.Project{}, utils.NewBadRequestError(errors.New("at least one field must be updated"))
+	creator, err := repository.GetUser(ctx, &project.CreatorID, nil)
+	if err != nil {
+		return types.Project{}, utils.NewInternalError(err)
 	}
 
-	if updateProject.AdminIDs != nil {
-		for _, adminID := range *updateProject.AdminIDs {
-			if adminID == project.CreatorID || (updateProject.MembersIDs != nil && utils.Have(func(_ int, memberID string) bool {
-				return memberID == adminID
-			}, *updateProject.MembersIDs)) {
-				return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+	if updateProject.AdminEmails != nil && user.ID == project.CreatorID {
+		for _, adminEmail := range *updateProject.AdminEmails {
+			if adminEmail == creator.Email || (updateProject.MemberEmails != nil && utils.Have(func(_ int, memberEmail string) bool {
+				return memberEmail == adminEmail
+			}, *updateProject.MemberEmails)) {
+				return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 			}
-			_, err := repository.GetUser(ctx, &adminID, nil)
+			admin, err := repository.GetUser(ctx, nil, &adminEmail)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", adminID)))
+				return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with email: %s found", adminEmail)))
 			} else if err != nil {
 				return types.Project{}, utils.NewInternalError(err)
 			}
+			updateProject.AdminIDs = append(updateProject.AdminIDs, admin.ID)
 		}
+	} else if updateProject.AdminEmails != nil {
+		return types.Project{}, utils.NewUnauthorizedError(errors.New("only creator can update admin emails"))
 	}
 
-	if updateProject.MembersIDs != nil {
-		for _, memberID := range *updateProject.MembersIDs {
-			if memberID == project.CreatorID {
-				return types.Project{}, utils.NewBadRequestError(errors.New("userID should be unique for each category"))
+	if updateProject.MemberEmails != nil {
+		for _, memberEmail := range *updateProject.MemberEmails {
+			if memberEmail == creator.Email {
+				return types.Project{}, utils.NewBadRequestError(errors.New("user email should be unique for each category"))
 			}
 
-			_, err := repository.GetUser(ctx, &memberID, nil)
+			member, err := repository.GetUser(ctx, nil, &memberEmail)
 			if errors.Is(err, pgx.ErrNoRows) {
-				return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with id: %s found", memberID)))
+				return types.Project{}, utils.NewBadRequestError(errors.New(fmt.Sprintf("no user with email: %s found", memberEmail)))
 			} else if err != nil {
 				return types.Project{}, utils.NewInternalError(err)
 			}
+			updateProject.MembersIDs = append(updateProject.MembersIDs, member.ID)
 		}
 	}
 

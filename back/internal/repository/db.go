@@ -15,7 +15,7 @@ import (
 
 var pool *pgxpool.Pool
 
-func bulkInsert(ctx context.Context, tx pgx.Tx, tableName string, columns []string, rows [][]interface{}) error {
+func bulkInsert(ctx context.Context, tx pgx.Tx, tableName string, columns []string, rows [][]any) error {
 	if len(rows) == 0 {
 		return nil
 	}
@@ -55,7 +55,7 @@ func withTx[T any](ctx context.Context, f func(pgx.Tx) (T, error)) (T, error) {
 	return f(tx)
 }
 
-func queryOneReturning[T any](ctx context.Context, query string, args ...interface{}) (T, error) {
+func queryOneReturning[T any](ctx context.Context, query string, args ...any) (T, error) {
 	var result T
 	row, err := pool.Query(ctx, query, args...)
 	if err != nil {
@@ -75,7 +75,7 @@ func queryOneReturning[T any](ctx context.Context, query string, args ...interfa
 	return result, row.Err()
 }
 
-func queryReturning[T any](ctx context.Context, query string, args ...interface{}) ([]T, error) {
+func queryReturning[T any](ctx context.Context, query string, args ...any) ([]T, error) {
 	var result []T
 	rows, err := pool.Query(ctx, query, args...)
 	if err != nil {
@@ -95,7 +95,7 @@ func queryReturning[T any](ctx context.Context, query string, args ...interface{
 	return result, rows.Err()
 }
 
-func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) (T, error) {
+func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...any) (T, error) {
 	var result T
 	row, err := tx.Query(ctx, query, args...)
 	if err != nil {
@@ -114,7 +114,7 @@ func queryOneReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, ar
 	return result, row.Err()
 }
 
-func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...interface{}) ([]T, error) {
+func queryReturningTx[T any](ctx context.Context, tx pgx.Tx, query string, args ...any) ([]T, error) {
 	var result []T
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {

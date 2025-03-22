@@ -16,6 +16,12 @@ type User struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type ProjectUsers struct {
+	Admins  []User `json:"admins"`
+	Members []User `json:"members"`
+	Creator User   `json:"creator"`
+}
+
 type TokenPair struct {
 	AccessToken        string    `json:"-"`
 	AccessTokenExpiry  time.Time `json:"-"`
@@ -85,19 +91,21 @@ type ProjectMember struct {
 }
 
 type CreateProject struct {
-	AdminEmails []string `json:"admin_emails,omitempty" validate:"omitempty,dive,email"`
+	AdminEmails  []string `json:"admin_emails,omitempty" validate:"omitempty,dive,email"`
 	MemberEmails []string `json:"member_emails,omitempty" validate:"omitempty,dive,email"`
-	AdminIDs []string `json:"-"`
-	MemberIDs []string `json:"-"`
-	Name        string   `json:"name" validate:"required,min=3,max=50"`
-	Description string   `json:"description" validate:"max=500"`
+	AdminIDs     []string `json:"-"`
+	MemberIDs    []string `json:"-"`
+	Name         string   `json:"name" validate:"required,min=3,max=50"`
+	Description  string   `json:"description" validate:"max=500"`
 }
 
 type UpdateProject struct {
-	AdminIDs    *[]string `json:"admin_ids,omitempty" validate:"omitempty,dive,uuid"`
-	MembersIDs  *[]string `json:"members_ids,omitempty" validate:"omitempty,dive,uuid"`
-	Name        *string   `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
-	Description *string   `json:"description,omitempty" validate:"omitempty,max=500"`
+	AdminEmails  *[]string `json:"admin_emails,omitempty" validate:"omitempty,dive,email"`
+	MemberEmails *[]string `json:"member_emails,omitempty" validate:"omitempty,dive,email"`
+	AdminIDs     []string  `json:"-"`
+	MembersIDs   []string  `json:"-"`
+	Name         *string   `json:"name,omitempty" validate:"omitempty,min=3,max=50"`
+	Description  *string   `json:"description,omitempty" validate:"omitempty,max=500"`
 }
 
 type KanbanColumn struct {

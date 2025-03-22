@@ -38,6 +38,7 @@ func (c *KanbanController) RegisterKanbanRoutes(r *chi.Mux) {
 		r.With(middleware.ValidateJson[types.UpdateProject]()).Patch("/project/{project_id}", c.updateProject)
 		r.Delete("/project/{project_id}", c.deleteProject)
 		r.Get("/projects", c.getProjects)
+		r.Get("/project/users/{project_id}", c.getProjectUsers)
 
 		r.With(middleware.ValidateJson[types.CreateKanbanColumn]()).Post("/column", c.createColumn)
 		r.Get("/column/{column_id}", c.getColumn)
@@ -90,6 +91,27 @@ func (c *KanbanController) getProjects(w http.ResponseWriter, r *http.Request) {
 
 	if err = utils.MarshalBody(w, http.StatusOK, projects); err != nil {
 		utils.HandleError(w, errors.New("Failed to marshal projects"))
+		return
+	}
+}
+
+func (c *KanbanController) getProjectUsers(w http.ResponseWriter, r *http.Request) {
+	user := middleware.UserFromContext(r.Context())
+
+	projectID := chi.URLParam(r, "project_id")
+	if projectID == "" {
+		utils.HandleError(w, utils.NewBadRequestError(errors.New("project id is required")))
+		return
+	}
+
+	projectUsers, err := service.GetProjectUsers(&user.ID, &projectID)
+	if err != nil {
+		utils.HandleError(w, err)
+		return
+	}
+
+	if err = utils.MarshalBody(w, http.StatusOK, projectUsers); err != nil {
+		utils.HandleError(w, errors.New("Failed to marshal project users"))
 		return
 	}
 }
@@ -215,7 +237,7 @@ func (c *KanbanController) createColumn(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusCreated, map[string]interface{}{
+	if err = utils.MarshalBody(w, http.StatusCreated, map[string]any{
 		"new_column": newColumn,
 		"columns":    columns,
 	}); err != nil {
@@ -230,7 +252,7 @@ func (c *KanbanController) createColumn(w http.ResponseWriter, r *http.Request) 
 		newColumn.ProjectID,
 		websocket.KanbanColumnCreatedEvent,
 		"kanban column created",
-		map[string]interface{}{
+		map[string]any{
 			"new_column": newColumn,
 			"columns":    columns,
 		},
@@ -279,7 +301,7 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err = utils.MarshalBody(w, http.StatusOK, map[string]interface{}{
+	if err = utils.MarshalBody(w, http.StatusOK, map[string]any{
 		"updated_column": column,
 		"columns":        columns,
 	}); err != nil {
@@ -290,7 +312,7 @@ func (c *KanbanController) updateColumn(w http.ResponseWriter, r *http.Request) 
 	projectUsers := append(project.AdminIDs, project.MembersIDs...)
 	projectUsers = append(projectUsers, project.CreatorID)
 
-	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnUpdatedEvent, "kanban column updated", map[string]interface{}{
+	c.WSServer.BroadcastToProject(project.ID, websocket.KanbanColumnUpdatedEvent, "kanban column updated", map[string]any{
 		"updated_column": column,
 		"columns":        columns,
 	}, projectUsers)
@@ -463,7 +485,7 @@ func (c *KanbanController) createRow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := utils.MarshalBody(w, http.StatusCreated, map[string]interface{}{"new_row": row, "rows": rows}); err != nil {
+	if err := utils.MarshalBody(w, http.StatusCreated, map[string]any{"new_row": row, "rows": rows}); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal row")))
 		return
 	}
@@ -475,7 +497,7 @@ func (c *KanbanController) createRow(w http.ResponseWriter, r *http.Request) {
 		project.ID,
 		websocket.KanbanRowCreatedEvent,
 		"kanban column label updated",
-		map[string]interface{}{
+		map[string]any{
 			"new_row": row,
 			"rows":    rows,
 		},
@@ -504,7 +526,7 @@ func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := utils.MarshalBody(w, http.StatusOK, map[string]interface{}{"updated_row": row, "rows": rows}); err != nil {
+	if err := utils.MarshalBody(w, http.StatusOK, map[string]any{"updated_row": row, "rows": rows}); err != nil {
 		utils.HandleError(w, utils.NewInternalError(errors.New("Failed to marshal label")))
 		return
 	}
@@ -516,7 +538,7 @@ func (c *KanbanController) updateRows(w http.ResponseWriter, r *http.Request) {
 		project.ID,
 		websocket.KanbanColumnLabelUpdatedEvent,
 		"kanban column label updated",
-		map[string]interface{}{
+		map[string]any{
 			"updated_row": row,
 			"rows":        rows,
 		},

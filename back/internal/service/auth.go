@@ -160,7 +160,7 @@ func RefreshToken(refreshTokenStr *string) (types.AuthUser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	token, err := jwt.Parse(*refreshTokenStr, func(token *jwt.Token) (interface{}, error) {
+	token, err := jwt.Parse(*refreshTokenStr, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}

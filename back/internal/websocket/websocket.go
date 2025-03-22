@@ -6,6 +6,8 @@ import (
 
 	"github.com/finkabaj/squid/back/internal/middleware"
 
+	"slices"
+
 	"github.com/finkabaj/squid/back/internal/logger"
 	"github.com/gorilla/websocket"
 )
@@ -42,9 +44,9 @@ const (
 )
 
 type Event struct {
-	Type    EventType   `json:"type"`
-	Message string      `json:"message"`
-	Payload interface{} `json:"payload"`
+	Type    EventType `json:"type"`
+	Message string    `json:"message"`
+	Payload any       `json:"payload"`
 }
 
 type Server struct {
@@ -144,7 +146,7 @@ func (s *Server) removeConnection(ws *websocket.Conn, userID string) {
 	conns := s.Conns[userID]
 	for i, conn := range conns {
 		if conn == ws {
-			s.Conns[userID] = append(conns[:i], conns[i+1:]...)
+			s.Conns[userID] = slices.Delete(conns, i, i+1)
 			break
 		}
 	}
@@ -156,7 +158,7 @@ func (s *Server) removeConnection(ws *websocket.Conn, userID string) {
 	ws.Close()
 }
 
-func (s *Server) BroadcastToUser(userID string, eventType EventType, msg string, payload interface{}) {
+func (s *Server) BroadcastToUser(userID string, eventType EventType, msg string, payload any) {
 	evt := Event{
 		Type:    eventType,
 		Message: msg,
@@ -175,7 +177,7 @@ func (s *Server) BroadcastToUser(userID string, eventType EventType, msg string,
 	}
 }
 
-func (s *Server) BroadcastToProject(projectID string, eventType EventType, msg string, payload interface{}, authorizedUsers []string) {
+func (s *Server) BroadcastToProject(projectID string, eventType EventType, msg string, payload any, authorizedUsers []string) {
 	evt := Event{
 		Type:    eventType,
 		Message: msg,

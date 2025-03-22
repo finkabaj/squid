@@ -29,10 +29,10 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 		}
 
 		if len(project.AdminIDs) > 0 {
-			adminRows := make([][]interface{}, len(project.AdminIDs))
+			adminRows := make([][]any, len(project.AdminIDs))
 
 			for i, userID := range project.AdminIDs {
-				adminRows[i] = []interface{}{
+				adminRows[i] = []any{
 					newProject.ID, userID,
 				}
 			}
@@ -45,10 +45,10 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 		}
 
 		if len(project.MemberIDs) > 0 {
-			memberRows := make([][]interface{}, len(project.MemberIDs))
+			memberRows := make([][]any, len(project.MemberIDs))
 
 			for i, userID := range project.MemberIDs {
-				memberRows[i] = []interface{}{
+				memberRows[i] = []any{
 					newProject.ID, userID,
 				}
 			}
@@ -62,6 +62,33 @@ func CreateProject(ctx context.Context, id *string, creatorID *string, project *
 
 		return newProject, nil
 	})
+}
+
+func GetProjectUsers(ctx context.Context, id *string, creatorID *string) (types.ProjectUsers, error) {
+	if id == nil {
+		return types.ProjectUsers{}, errors.New("Id must not be nil")
+	}
+
+	admins, err := queryReturning[types.User](ctx, `SELECT u.* FROM "users" u WHERE u."id" IN (SELECT "userID" FROM "projectAdmins" WHERE "projectID" = $1)`, id)
+	if err != nil {
+		return types.ProjectUsers{}, errors.WithStack(err)
+	}
+
+	members, err := queryReturning[types.User](ctx, `SELECT u.* FROM "users" u WHERE u."id" IN (SELECT "userID" FROM "projectMembers" WHERE "projectID" = $1)`, id)
+	if err != nil {
+		return types.ProjectUsers{}, errors.WithStack(err)
+	}
+
+	creator, err := queryOneReturning[types.User](ctx, `SELECT u.* FROM "users" u WHERE u."id" = $1`, creatorID)
+	if err != nil {
+		return types.ProjectUsers{}, errors.WithStack(err)
+	}
+
+	return types.ProjectUsers{
+		Admins:  admins,
+		Members: members,
+		Creator: creator,
+	}, nil
 }
 
 func GetProject(ctx context.Context, id *string) (types.Project, error) {
@@ -123,18 +150,18 @@ func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateP
 			return types.Project{}, errors.WithStack(err)
 		}
 
-		if updateProject.AdminIDs != nil {
+		if updateProject.AdminEmails != nil {
 			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectAdmins" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return types.Project{}, errors.WithStack(err)
 			}
 
-			if len(*updateProject.AdminIDs) > 0 {
-				adminRows := make([][]interface{}, len(*updateProject.AdminIDs))
+			if len(updateProject.AdminIDs) > 0 {
+				adminRows := make([][]any, len(updateProject.AdminIDs))
 
-				for i, userID := range *updateProject.AdminIDs {
-					adminRows[i] = []interface{}{
+				for i, userID := range updateProject.AdminIDs {
+					adminRows[i] = []any{
 						project.ID, userID,
 					}
 				}
@@ -143,22 +170,32 @@ func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateP
 					return types.Project{}, errors.WithStack(err)
 				}
 
-				project.AdminIDs = *updateProject.AdminIDs
+				project.AdminIDs = updateProject.AdminIDs
 			}
+		} else {
+			admins, err := queryReturning[types.ProjectAdmin](ctx, `SELECT * FROM "projectAdmins" WHERE "projectID" = $1`, id)
+
+			if err != nil {
+				return types.Project{}, errors.WithStack(err)
+			}
+
+			project.AdminIDs = utils.Map(func(i int, admin types.ProjectAdmin) string {
+				return admin.UserID
+			}, admins)
 		}
 
-		if updateProject.MembersIDs != nil {
+		if updateProject.MemberEmails != nil {
 			_, err = queryOneReturningTx[any](ctx, tx, `DELETE FROM "projectMembers" WHERE "projectID"=$1`, id)
 
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return types.Project{}, errors.WithStack(err)
 			}
 
-			if len(*updateProject.MembersIDs) > 0 {
-				memberRows := make([][]interface{}, len(*updateProject.MembersIDs))
+			if len(updateProject.MembersIDs) > 0 {
+				memberRows := make([][]any, len(updateProject.MembersIDs))
 
-				for i, userID := range *updateProject.MembersIDs {
-					memberRows[i] = []interface{}{
+				for i, userID := range updateProject.MembersIDs {
+					memberRows[i] = []any{
 						project.ID, userID,
 					}
 				}
@@ -167,8 +204,18 @@ func UpdateProject(ctx context.Context, id *string, updateProject *types.UpdateP
 					return types.Project{}, errors.WithStack(err)
 				}
 
-				project.MembersIDs = *updateProject.MembersIDs
+				project.MembersIDs = updateProject.MembersIDs
 			}
+		} else {
+			members, err := queryReturning[types.ProjectMember](ctx, `SELECT * FROM "projectMembers" WHERE "projectID" = $1`, id)
+
+			if err != nil {
+				return types.Project{}, errors.WithStack(err)
+			}
+
+			project.MembersIDs = utils.Map(func(i int, member types.ProjectMember) string {
+				return member.UserID
+			}, members)
 		}
 
 		return project, nil
@@ -578,10 +625,10 @@ func CreateKanbanRow(ctx context.Context, id *string, commentSectionID *string, 
 		kanbanRow.CommentSection = &commentSection
 
 		if len(createRow.AssignedUsersIDs) > 0 {
-			assignee := make([][]interface{}, len(createRow.AssignedUsersIDs))
+			assignee := make([][]any, len(createRow.AssignedUsersIDs))
 
 			for i, userID := range createRow.AssignedUsersIDs {
-				assignee[i] = []interface{}{id, userID}
+				assignee[i] = []any{id, userID}
 			}
 
 			if err := bulkInsert(ctx, tx, "kanbanRowAssignees", []string{"rowID", "userID"}, assignee); err != nil {
